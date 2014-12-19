@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Learning SASS</title>
+	<link rel="stylesheet" href="css/application.css" />
+</head>
+<body>
+	<div class="container">
+		<header class="grid__col--12 panel--padded--centered" role="banner">
+			<a class="site-logo" href="/">
+				<b class="srt">Parewa Labs</b>
+			</a>
+
+			<nav role="navigation">
+				<span id="toggle" class="icn--nav-toggle is-displayed-mobile">
+					<b class="srt">Toggle</b>
+				</span>
+
+				<ul class="nav is-collapsed-mobile">
+					<li class="nav__item"><a href="#">Typography</a></li>
+					<li class="nav__item"><a href="#">Buttons</a></li>
+					<li class="nav__item"><a href="#">Forms</a></li>
+					<li class="nav__item"><a href="#">Images</a></li>
+					<li class="nav__item"><a href="#">Grid</a></li>
+					<li class="nav__item--current"><a href="#">Navigation</a></li>
+				</ul> 
+		</header>
+	</div>
+
+	<div class="container">
+		<img class="img--hero is-hidden-mobile" src="img/PK poster.jpg" alt="PK Poster"></img>
+	</div>
+
+	<div class="container">
+		<h4>Typography</h4>
+		<div class="grid__col--8 centered">
+			<h1 class="headline-primary">Take a look at this amazing headline</h1>
+			<h2 class="headline-secondary">Don't forget about the subtitle</h2>
+			<p>This is a typical paragraph of the UI kit. It uses syntatically awesome stylesheets to make awesome ideas come true</p>
+			<blockquote>I am quoting this yo!</blockquote>
+
+			<h1 class="headline-primary--grouped">Take a look at this amazing grouped headline</h1>
+			<h2 class="headline-secondary--grouped">Don't forget about the grouped subtitle</h2>
+			<p>This is a typical paragraph of the UI kit. It uses syntatically awesome stylesheets to make awesome ideas come true</p>
+		</div>
+	</div>
+
+	<div class="container">
+		<h4>Form elements</h4>
+		<form class="grid__col--8 form">
+			<label class="form__label--hidden" for="name">Name:</label>
+			<input class="form__input" type="text" id="name" placeholder="Name">
+			<label class="form__label--hidden"  for="email">Email:</label>
+			<input class="form__input" type="text" id="email" placeholder="email@website.com">
+			<label class="form__label--hidden" for="msg">Message:</label>
+			<textarea class="form__input" id="msg" placeholder="Message..." rows="6"></textarea>
+			<input class="form__btn" type="submit" value="submit">
+		</form>
+		<form class="grid__col--4 form">
+			<img class="centered img--avatar" src="img/avatar.jpg" height="10" alt="PK Poster"></img>
+			<label class="form__label--hidden" for="name">Username:</label>
+			<input class="form__input" type="text" id="name" placeholder="Username">
+			<label class="form__label--hidden"  for="email">Password:</label>
+			<input class="form__input" type="text" id="email" placeholder="Password">
+			<input class="form__btn" type="submit" value="Login">
+		</form>
+	</div>
+
+	<div class="container">
+		<h4>Images</h4>
+		<p>Image wrapped with a border</p>
+		<img class="img--wrap" src="img/PK poster.jpg" alt="PK Poster"></img>
+
+		<p>Avatar image</p>
+		
+	</div>
+	<script src="http://code.jquery.com/jquery-1.11.0.min.js"></script>
+	<script type="text/javascript">
+		$("#toggle").click(function() {
+			$(this).next(".nav").toggleClass("is-collapsed-mobile");
+		});
+	</script>
+</body>
+</html>

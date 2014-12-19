@@ -1,0 +1,64 @@
+// ===========================================================
+// Base Styles
+// ===========================================================
+
+* {
+	-moz-box-sizing : border-box;
+	box-sizing : border-box;
+}
+
+body {
+	font-size : $base__font-size;
+	line-height : ($base__line/$base__font-size);
+	font-family : $font-family--primary;
+	margin: 0 auto;
+	width : 100%;
+}
+
+
+h1 {
+	@extend %headline-primary;
+	}
+
+h2 {
+	@extend %headline-secondary;
+}
+
+a {
+	color: palette(grey, dark);
+	text-decoration: none;
+	font-weight: $font-weight--medium;
+}
+
+p {
+	font-size : em(18px);
+	font-weight: $font-weight--light; 
+	line-height : (27px/18px);
+	margin: 0 0 em(30px,18px);
+}
+
+blockquote {
+	font-size: em(24px);
+	font-style : italic;
+	font-weight: font-weight--light;
+	margin : em(32px, 24px) 0;
+	padding : 0 0 0 5%;
+	border-left : solid em(8px,24px) palette(grey, xx-light);
+}
+
+input {
+	border: none;
+}
+
+textarea {
+	border: none;
+	font-family: $font-family--primary;
+} 
+
+// Images
+
+img {
+	margin-bottom: em(24px);
+	max-width: 100%;
+	height: auto;
+}
