@@ -64,7 +64,7 @@
 
         vec3 newpos = position;
         // Multiply new height so we can actually see the difference.
-        newpos.z = info.g * 10.0;
+        newpos.z = info.g * 1000.0;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(newpos, 1.0);
     }
 </script>

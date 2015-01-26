@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>three.js webgl - gpgpu - flocking</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<style>body{background-color:#000;margin:0px;overflow:hidden;font-family:monospace;font-size:13px;text-align:center;font-weight:bold;text-align:center}a{color:#0078ff}#info{color:#fff;position:absolute;top:0px;width:100%;padding:5px;z-index:100}</style>
+</head>
+<body>
+<div id="info">
+<a href="http://threejs.org" target="_blank">three.js</a> - webgl gpgpu wip flocking example<br/>
+<br/>
+Click and see what happens ;)
+</div>
+<script src="http://jabtunes.com/labs/3d/gpuflocking/js/three.min.js.pagespeed.jm.YcctDE0WA8.js"></script>
+<script>//<![CDATA[
+var Detector={canvas:!!window.CanvasRenderingContext2D,webgl:(function(){try{return!!window.WebGLRenderingContext&&!!document.createElement('canvas').getContext('experimental-webgl');}catch(e){return false;}})(),workers:!!window.Worker,fileapi:window.File&&window.FileReader&&window.FileList&&window.Blob,getWebGLErrorMessage:function(){var element=document.createElement('div');element.id='webgl-error-message';element.style.fontFamily='monospace';element.style.fontSize='13px';element.style.fontWeight='normal';element.style.textAlign='center';element.style.background='#fff';element.style.color='#000';element.style.padding='1.5em';element.style.width='400px';element.style.margin='5em auto 0';if(!this.webgl){element.innerHTML=window.WebGLRenderingContext?['Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br />','Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'].join('\n'):['Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br/>','Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'].join('\n');}
+return element;},addGetWebGLMessage:function(parameters){var parent,id,element;parameters=parameters||{};parent=parameters.parent!==undefined?parameters.parent:document.body;id=parameters.id!==undefined?parameters.id:'oldie';element=Detector.getWebGLErrorMessage();element.id=id;parent.appendChild(element);}};
+//]]></script>
+<script src="http://jabtunes.com/labs/3d/gpuflocking/js/stats.min.js.pagespeed.jm.IGPzmnrWg_.js"></script>
+<!-- pass through shaders -->
+<script id="vertexShader" type="x-shader/x-vertex">
+
+			void main()	{
+
+				gl_Position = vec4( position, 1.0 );
+
+			}
+
+		</script>
+<script id="fragmentShader" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			uniform sampler2D texture;
+
+			void main()	{
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				vec3 color = texture2D( texture, uv ).xyz;
+
+				gl_FragColor=vec4(color, 1.0);
+
+			}
+
+		</script>
+<!-- end pass through shaders -->
+<script id="fragmentShaderPosition" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			// uniform float delta;
+			uniform sampler2D textureVelocity;
+			uniform sampler2D texturePosition;
+
+			void main()	{
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				vec3 position = texture2D( texturePosition, uv ).xyz;
+				vec3 velocity = texture2D( textureVelocity, uv ).xyz;
+
+				gl_FragColor=vec4(position + velocity * 5.0, 1.0);
+
+			}
+
+		</script>
+<script id="fragmentShaderVelocity" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			uniform float testing;
+			// uniform float delta;
+			uniform sampler2D textureVelocity;
+			uniform sampler2D texturePosition;
+
+			const int width = 32;
+			const int height = 32;
+
+			const float PI = 3.141592653589793;
+			const float PI_2 = 3.141592653589793 * 2.0;
+			const float VISION = PI * 0.55;
+
+			const float UPPER_BOUNDS = 200.0;
+			const float LOWER_BOUNDS = -UPPER_BOUNDS;
+
+			float rand(vec2 co){
+			    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+			}
+
+			void main()	{
+
+				float seperationDistance = 10.0; // 10
+				float alignmentDistance = 40.0; // 40
+				float cohesionDistance = 200.0; // 200
+				float freedomFactor = 0.85;
+
+
+				// alignmentDistance = testing;
+
+				// alignment: 10, 20 40, 80, 100, 200
+				// seperation: 5, 10, 20, 40, 80
+				// Cohension  0, 200.0, 10, 20, 30, 1000
+				// Freedom: 95, 80
+
+				// 151.0 + sin(time / 800.0) * 200.0; // - nice dispersion
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				// int x, y;
+				vec3 birdPosition, birdVelocity;
+
+				vec3 selfPosition = texture2D( texturePosition, uv ).xyz;
+				vec3 selfVelocity = texture2D( textureVelocity, uv ).xyz;
+
+				float dist;
+				vec3 diff;
+
+				vec3 velocity = selfVelocity;
+				vec3 cohesion = vec3(0.0);
+				vec3 alignment = vec3(0.0);
+
+				float cohensionCount = 0.0;
+				float alignmentCount = 0.0;
+
+
+				if (testing == 0.0) {
+					// vec3 prey = vec3(0.0, 0.0, 0.0);
+					// float dist = distance(prey, selfPosition);
+					// if (dist < 100.0) {
+					// 	velocity = -normalize(prey - selfPosition) / 4.0 + velocity * 0.2;
+					// }
+
+					cohesionDistance = 5.0;
+
+					seperationDistance = 40.0;
+				}
+
+				if ( rand( uv + time ) > freedomFactor ) {
+
+					for (int y=0;y<height;y++) {
+						for (int x=0;x<width;x++) {
+
+							if (
+								x == int(gl_FragCoord.x) && y == int(gl_FragCoord.y)) continue;
+
+
+							birdPosition = texture2D( texturePosition,
+								vec2(float(x)/resolution.x, float(y)/resolution.y) ).xyz;
+
+							birdVelocity = texture2D( textureVelocity,
+								vec2(float(x)/resolution.x, float(y)/resolution.y) ).xyz;
+
+							diff = birdPosition - selfPosition;
+							dist = length(diff);
+
+							if (dist > 0.0 && dist < seperationDistance) {
+								velocity -= diff / dist;
+								velocity /= 2.0;
+							}
+
+							if (dist < alignmentDistance) {
+								alignment += birdVelocity;
+								alignmentCount ++;
+							}
+
+							if (dist < cohesionDistance) {
+								cohesion += birdPosition;
+								cohensionCount ++;
+							}
+
+						}
+					}
+
+					if (alignmentCount > 0.0) {
+						alignment /= alignmentCount;
+						dist = length(alignment);
+						velocity += alignment/dist;
+						velocity /= 2.0;
+					}
+
+					if (cohensionCount > 0.0) {
+						cohesion /= cohensionCount;
+						diff = cohesion - selfPosition;
+						dist = length(diff);
+						velocity = diff / dist / 10.0 * 0.5 + velocity * 0.5;
+					}
+				}
+
+				if ((selfPosition.x + velocity.x * 5.0) < LOWER_BOUNDS) velocity.x = -velocity.x;
+				if ((selfPosition.y + velocity.y * 5.0) < LOWER_BOUNDS) velocity.y = -velocity.y;
+				if ((selfPosition.z + velocity.z * 5.0) < LOWER_BOUNDS) velocity.z = -velocity.z;
+
+				if ((selfPosition.x + velocity.x * 5.0) > UPPER_BOUNDS) velocity.x = -velocity.x;
+				if ((selfPosition.y + velocity.y * 5.0) > UPPER_BOUNDS) velocity.y = -velocity.y;
+				if ((selfPosition.z + velocity.z * 5.0) > UPPER_BOUNDS) velocity.z = -velocity.z;
+
+				gl_FragColor=vec4(velocity, 1.0);
+
+			}
+
+		</script>
+<!-- start shader for particles -->
+<script id="vs-particles" type="x-shader/x-vertex">
+
+			uniform sampler2D map;
+
+			uniform float width;
+			uniform float height;
+
+			uniform float pointSize;
+
+			varying vec2 vUv;
+			varying vec4 vPosition;
+			varying vec4 vColor;
+
+			void main() {
+
+				vec2 uv = position.xy + vec2( 0.5 / width, 0.5 / height );
+				vec3 color = texture2D( map, uv ).rgb;
+				 // * 100.0 - 50.0;
+
+				// gl_PointSize = pointSize;
+				gl_PointSize = 4.0;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( color, 1.0 );
+
+			}
+
+		</script>
+<!-- color it later... -->
+<script id="fs-particles" type="x-shader/x-fragment">
+
+			uniform vec4 pointColor;
+
+			void main() {
+
+				gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+				// pointColor
+
+			}
+
+		</script>
+<script src="SimulatorRenderer1.js"></script>
+<script>if (!Detector.webgl) Detector.addGetWebGLMessage();
+var container, stats;
+var camera, scene, renderer, particles, geometry, materials = [],
+    parameters, i, h, color;
+var mouseX = 0,
+    mouseY = 0;
+var windowHalfX = window.innerWidth / 2;
+var windowHalfY = window.innerHeight / 2;
+var WIDTH = 32;
+var HEIGHT = WIDTH;
+var PARTICLES = WIDTH * WIDTH;
+var BOUNDS = 400,
+    BOUNDS_HALF = BOUNDS / 2;
+var debug;
+var data, texture;
+console.log('total', PARTICLES);
+var simulator;
+var flipflop = true;
+var rtPosition1, rtPosition2, rtVelocity1, rtVelocity2;
+init();
+animate();
+
+function init() {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 3000);
+    camera.position.z = 400;
+    scene = new THREE.Scene();
+    geometry = new THREE.Geometry();
+    for (var i = 0, l = WIDTH * HEIGHT; i < l; i++) {
+        var vertex = new THREE.Vector3();
+        vertex.x = (i % WIDTH) / WIDTH;
+        vertex.y = Math.floor(i / WIDTH) / HEIGHT;
+        geometry.vertices.push(vertex);
+    }
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+    simulator = new SimulatorRenderer(WIDTH, renderer);
+    var dtPosition = generateDataTexture();
+    var dtVelocity = generateVelocityTexture();
+    rtPosition1 = simulator.getRenderTarget();
+    rtPosition2 = rtPosition1.clone();
+    rtVelocity1 = rtPosition1.clone();
+    rtVelocity2 = rtPosition1.clone();
+    simulator.renderTexture(dtPosition, rtPosition1);
+    simulator.renderTexture(rtPosition1, rtPosition2);
+    simulator.renderTexture(dtVelocity, rtVelocity1);
+    simulator.renderTexture(rtVelocity1, rtVelocity2);
+    simulator.velocityUniforms.testing.value = 10;
+    material = new THREE.ShaderMaterial({
+        uniforms: {
+            "map": {
+                type: "t",
+                value: null
+            },
+            "width": {
+                type: "f",
+                value: WIDTH
+            },
+            "height": {
+                type: "f",
+                value: HEIGHT
+            },
+            "pointColor": {
+                type: "v4",
+                value: new THREE.Vector4(0.25, 0.50, 1.0, 0.25)
+            },
+            "pointSize": {
+                type: "f",
+                value: 1
+            }
+        },
+        vertexShader: document.getElementById('vs-particles').textContent,
+        fragmentShader: document.getElementById('fs-particles').textContent,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+        transparent: true
+    });
+    material.uniforms.map.value = rtPosition1;
+    particles = new THREE.ParticleSystem(geometry, material);
+    scene.add(particles);
+    plane = new THREE.PlaneGeometry(BOUNDS, BOUNDS, 1, 1);
+    cube = new THREE.Mesh(new THREE.CubeGeometry(BOUNDS, BOUNDS, BOUNDS), new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true
+    }));
+    scene.add(cube);
+    stats = new Stats();
+    stats.domElement.style.position = 'absolute';
+    stats.domElement.style.top = '0px';
+    container.appendChild(stats.domElement);
+    document.addEventListener('mousemove', onDocumentMouseMove, false);
+    document.addEventListener('mousedown', onMouseDown, false);
+    document.addEventListener('mouseup', onMouseUp, false);
+    document.addEventListener('touchstart', onDocumentTouchStart, false);
+    document.addEventListener('touchmove', onDocumentTouchMove, false);
+    window.addEventListener('resize', onWindowResize, false);
+}
+
+function onWindowResize() {
+    windowHalfX = window.innerWidth / 2;
+    windowHalfY = window.innerHeight / 2;
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onDocumentMouseMove(event) {
+    mouseX = event.clientX - windowHalfX;
+    mouseY = event.clientY - windowHalfY;
+}
+
+function onDocumentTouchStart(event) {
+    if (event.touches.length === 1) {
+        event.preventDefault();
+        mouseX = event.touches[0].pageX - windowHalfX;
+        mouseY = event.touches[0].pageY - windowHalfY;
+    }
+}
+
+function onDocumentTouchMove(event) {
+    if (event.touches.length === 1) {
+        event.preventDefault();
+        mouseX = event.touches[0].pageX - windowHalfX;
+        mouseY = event.touches[0].pageY - windowHalfY;
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    render();
+    stats.update();
+}
+var timer = 0;
+
+function render() {
+    timer += 0.01;
+    if (flipflop) {
+        simulator.renderVelocity(rtPosition1, rtVelocity1, rtVelocity2);
+        simulator.renderPosition(rtPosition1, rtVelocity2, rtPosition2);
+        material.uniforms.map.value = rtPosition2;
+    } else {
+        simulator.renderVelocity(rtPosition2, rtVelocity2, rtVelocity1);
+        simulator.renderPosition(rtPosition2, rtVelocity1, rtPosition1);
+        material.uniforms.map.value = rtPosition1;
+    }
+    flipflop = !flipflop;
+    var time = Date.now() * 0.00005;
+    camera.position.x += (mouseX - camera.position.x) * 0.05;
+    camera.position.y += (-mouseY - camera.position.y) * 0.05;
+    camera.lookAt(scene.position);
+    renderer.render(scene, camera);
+}
+
+function onMouseDown() {
+    simulator.velocityUniforms.testing.value = 0;
+}
+
+function onMouseUp() {
+    simulator.velocityUniforms.testing.value = 1;
+}
+
+function generateDataTexture() {
+    var x, y, z;
+    var w = WIDTH,
+        h = WIDTH;
+    var a = new Float32Array(PARTICLES * 4);
+    for (var k = 0; k < PARTICLES; k++) {
+        x = Math.random() * BOUNDS - BOUNDS_HALF;
+        y = Math.random() * BOUNDS - BOUNDS_HALF;
+        z = Math.random() * BOUNDS - BOUNDS_HALF;
+        a[k * 4 + 0] = x;
+        a[k * 4 + 1] = y;
+        a[k * 4 + 2] = z;
+        a[k * 4 + 3] = 1;
+    }
+    var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    texture.flipY = false;
+    console.log(texture);
+    return texture;
+}
+
+function generateVelocityTexture() {
+        var x, y, z;
+        var w = WIDTH,
+            h = WIDTH;
+        var a = new Float32Array(PARTICLES * 4);
+        for (var k = 0; k < PARTICLES; k++) {
+            x = Math.random() - 0.5;
+            y = Math.random() - 0.5;
+            z = Math.random() - 0.5;
+            a[k * 4 + 0] = x * 10;
+            a[k * 4 + 1] = y * 10;
+            a[k * 4 + 2] = z * 10;
+            a[k * 4 + 3] = 1;
+        }
+        var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.needsUpdate = true;
+        texture.flipY = false;
+        console.log(texture);
+        return texture;
+    } 
+    </script> 
+
+    <script> //<![CDATA[
+    (function() {
+        var d = encodeURIComponent,
+            f = window,
+            g = document,
+            h = "documentElement",
+            k = "length",
+            l = "prototype",
+            m = "body",
+            p = "&",
+            s = "&ci=",
+            t = ",",
+            u = "?",
+            v = "Content-Type",
+            w = "Microsoft.XMLHTTP",
+            x = "Msxml2.XMLHTTP",
+            y = "POST",
+            z = "application/x-www-form-urlencoded",
+            A = "img",
+            B = "input",
+            C = "load",
+            D = "oh=",
+            E = "on",
+            F = "pagespeed_url_hash",
+            G = "url=";
+        f.pagespeed = f.pagespeed || {};
+        var H = f.pagespeed,
+            I = function(a, b, c) {
+                this.c = a;
+                this.e = b;
+                this.d = c;
+                this.b = this.f();
+                this.a = {}
+            };
+        I[l].f = function() {
+            return {
+                height: f.innerHeight || g[h].clientHeight || g[m].clientHeight,
+                width: f.innerWidth || g[h].clientWidth || g[m].clientWidth
+            }
+        };
+        I[l].g = function(a) {
+            a = a.getBoundingClientRect();
+            return {
+                top: a.top + (void 0 !== f.pageYOffset ? f.pageYOffset : (g[h] || g[m].parentNode || g[m]).scrollTop),
+                left: a.left + (void 0 !== f.pageXOffset ? f.pageXOffset : (g[h] || g[m].parentNode || g[m]).scrollLeft)
+            }
+        };
+        I[l].h = function(a) {
+            if (0 >= a.offsetWidth && 0 >= a.offsetHeight) return !1;
+            a = this.g(a);
+            var b = a.top.toString() + t + a.left.toString();
+            if (this.a.hasOwnProperty(b)) return !1;
+            this.a[b] = !0;
+            return a.top <= this.b.height && a.left <= this.b.width
+        };
+        I[l].i = function(a) {
+            var b;
+            if (f.XMLHttpRequest) b = new XMLHttpRequest;
+            else if (f.ActiveXObject) try {
+                b = new ActiveXObject(x)
+            } catch (c) {
+                try {
+                    b = new ActiveXObject(w)
+                } catch (e) {}
+            }
+            if (!b) return !1;
+            b.open(y, this.c + (-1 == this.c.indexOf(u) ? u : p) + G + d(this.e));
+            b.setRequestHeader(v, z);
+            b.send(a);
+            return !0
+        };
+        I[l].k = function() {
+            for (var a = [A, B], b = [], c = {}, e = 0; e < a[k]; ++e)
+                for (var q = g.getElementsByTagName(a[e]), n = 0; n < q[k]; ++n) {
+                    var r = q[n].getAttribute(F);
+                    r && (q[n].getBoundingClientRect && this.h(q[n])) && !(r in c) && (b.push(r), c[r] = !0)
+                }
+            if (0 != b[k]) {
+                a = D + this.d;
+                a += s + d(b[0]);
+                for (e = 1; e < b[k]; ++e) {
+                    c = t + d(b[e]);
+                    if (131072 < a[k] + c[k]) break;
+                    a += c
+                }
+                H.criticalImagesBeaconData = a;
+                this.i(a)
+            }
+        };
+        H.j = function(a, b, c) {
+            if (a.addEventListener) a.addEventListener(b, c, !1);
+            else if (a.attachEvent) a.attachEvent(E + b, c);
+            else {
+                var e = a[E + b];
+                a[E + b] = function() {
+                    c.call(this);
+                    e && e.call(this)
+                }
+            }
+        };
+        H.l = function(a, b, c) {
+            var e = new I(a, b, c);
+            H.j(f, C, function() {
+                f.setTimeout(function() {
+                    e.k()
+                }, 0)
+            })
+        };
+        H.criticalImagesBeaconInit = H.l;
+    })();
+pagespeed.criticalImagesBeaconInit('/mod_pagespeed_beacon', 'http://jabtunes.com/labs/3d/gpuflocking/webgl_gpgpu_flocking1.html', 'f81aupMvhr');
+//]]></script>
+<script>//<![CDATA[
+(function(){var d=encodeURIComponent,f=window,g=document,h="documentElement",k="length",l="prototype",m="body",p="&",s="&ci=",t=",",u="?",v="Content-Type",w="Microsoft.XMLHTTP",x="Msxml2.XMLHTTP",y="POST",z="application/x-www-form-urlencoded",A="img",B="input",C="load",D="oh=",E="on",F="pagespeed_url_hash",G="url=";f.pagespeed=f.pagespeed||{};var H=f.pagespeed,I=function(a,b,c){this.c=a;this.e=b;this.d=c;this.b=this.f();this.a={}};I[l].f=function(){return{height:f.innerHeight||g[h].clientHeight||g[m].clientHeight,width:f.innerWidth||g[h].clientWidth||g[m].clientWidth}};I[l].g=function(a){a=a.getBoundingClientRect();return{top:a.top+(void 0!==f.pageYOffset?f.pageYOffset:(g[h]||g[m].parentNode||g[m]).scrollTop),left:a.left+(void 0!==f.pageXOffset?f.pageXOffset:(g[h]||g[m].parentNode||g[m]).scrollLeft)}};I[l].h=function(a){if(0>=a.offsetWidth&&0>=a.offsetHeight)return!1;a=this.g(a);var b=a.top.toString()+t+a.left.toString();if(this.a.hasOwnProperty(b))return!1;this.a[b]=!0;return a.top<=this.b.height&&a.left<=this.b.width};I[l].i=function(a){var b;if(f.XMLHttpRequest)b=new XMLHttpRequest;else if(f.ActiveXObject)try{b=new ActiveXObject(x)}catch(c){try{b=new ActiveXObject(w)}catch(e){}}if(!b)return!1;b.open(y,this.c+(-1==this.c.indexOf(u)?u:p)+G+d(this.e));b.setRequestHeader(v,z);b.send(a);return!0};I[l].k=function(){for(var a=[A,B],b=[],c={},e=0;e<a[k];++e)for(var q=g.getElementsByTagName(a[e]),n=0;n<q[k];++n){var r=q[n].getAttribute(F);r&&(q[n].getBoundingClientRect&&this.h(q[n]))&&!(r in c)&&(b.push(r),c[r]=!0)}if(0!=b[k]){a=D+this.d;a+=s+d(b[0]);for(e=1;e<b[k];++e){c=t+d(b[e]);if(131072<a[k]+c[k])break;a+=c}H.criticalImagesBeaconData=a;this.i(a)}};H.j=function(a,b,c){if(a.addEventListener)a.addEventListener(b,c,!1);else if(a.attachEvent)a.attachEvent(E+b,c);else{var e=a[E+b];a[E+b]=function(){c.call(this);e&&e.call(this)}}};H.l=function(a,b,c){var e=new I(a,b,c);H.j(f,C,function(){f.setTimeout(function(){e.k()},0)})};H.criticalImagesBeaconInit=H.l;})();pagespeed.criticalImagesBeaconInit('/mod_pagespeed_beacon','http://jabtunes.com/labs/3d/gpuflocking/webgl_gpgpu_flocking1.html','f81aupMvhr');
+//]]></script></body>
+</html>

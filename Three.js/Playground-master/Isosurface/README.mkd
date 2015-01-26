@@ -1,0 +1,5 @@
+Isosurfaces
+=========
+
+For more information read the blog entry: <http://blog.thejit.org/2010/12/10/animating-isosurfaces-with-webgl-and-workers/>
+
