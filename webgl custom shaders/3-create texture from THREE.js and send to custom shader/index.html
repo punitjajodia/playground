@@ -1,0 +1,240 @@
+<html>
+<head>
+    <title>My first Three.js app</title>
+    <style>
+    canvas
+    {
+        width: 100%;
+        height: 100%;
+        background: white;
+    }
+    </style>
+</head>
+<body>
+    <!-- ---------------- Custom Shader Code ------------------------ -->
+    <script id="vertShader" type="shader">
+    varying vec3 normalToVertex;
+    varying vec2 uUV;
+    void main() {
+     uUV = uv;
+     normalToVertex = normal;
+     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0 );
+ }
+ </script>
+ <script id="fragShader" type="shader">
+
+ precision highp float;
+ uniform vec3 color;
+ float intensity;
+ uniform vec3 lightDir;
+ varying vec3 normalToVertex;
+ vec3 pointLightDir;
+ uniform sampler2D texture;
+ varying vec2 uUV;
+
+ void main(void) {
+     intensity = dot(normalToVertex, normalize(lightDir));
+     gl_FragColor = texture2D(texture, uUV)* intensity;
+ }
+ </script>
+ <script src="js/three.min.js"></script>
+ <script src="js/OrbitControls.js"></script>
+ <script src="js/DAT.GUI.js"></script>
+ <script>
+ var scene,
+ camera,
+ renderer,
+ container,
+ controls,
+ mesh,
+ clock, light;
+
+
+ var WIDTH = 1000 / 2;
+ var HEIGHT = WIDTH;
+ var PARTICLES = WIDTH * WIDTH;
+ console.log(PARTICLES);
+ var BOUNDS = 400,
+ BOUNDS_HALF = BOUNDS / 2;
+
+ function generateDataTexture() {
+    var x, y, z;
+    var w = WIDTH,
+    h = WIDTH;
+    var a = new Float32Array(PARTICLES * 4);
+    for (var k = 0; k < PARTICLES; k++) {
+        x = Math.random() * BOUNDS - BOUNDS_HALF;
+        y = Math.random() * BOUNDS - BOUNDS_HALF;
+        z = Math.random() * BOUNDS - BOUNDS_HALF;
+                // a[k * 4 + 0] = 1;//x;
+                // a[k * 4 + 1] = 0;//y;
+                // a[k * 4 + 2] = 0;//z;
+                // a[k * 4 + 3] = 1;
+
+                a[k * 4 + 0] = x;
+                a[k * 4 + 1] = y;
+                a[k * 4 + 2] = z;
+                a[k * 4 + 3] = 1;
+            }
+            var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+            texture.minFilter = THREE.NearestFilter;
+            texture.magFilter = THREE.NearestFilter;
+            texture.needsUpdate = true;
+            texture.flipY = false;
+            console.log(texture);
+            return texture;
+        }
+
+        assignUVs = function( geometry ){
+
+            geometry.computeBoundingBox();
+
+            var max     = geometry.boundingBox.max;
+            var min     = geometry.boundingBox.min;
+
+            var offset  = new THREE.Vector2(0 - min.x, 0 - min.y);
+            var range   = new THREE.Vector2(max.x - min.x, max.y - min.y);
+
+            geometry.faceVertexUvs[0] = [];
+            var faces = geometry.faces;
+
+            for (i = 0; i < geometry.faces.length ; i++) {
+
+              var v1 = geometry.vertices[faces[i].a];
+              var v2 = geometry.vertices[faces[i].b];
+              var v3 = geometry.vertices[faces[i].c];
+
+              geometry.faceVertexUvs[0].push([
+                new THREE.Vector2( ( v1.x + offset.x ) / range.x , ( v1.y + offset.y ) / range.y ),
+                new THREE.Vector2( ( v2.x + offset.x ) / range.x , ( v2.y + offset.y ) / range.y ),
+                new THREE.Vector2( ( v3.x + offset.x ) / range.x , ( v3.y + offset.y ) / range.y )
+                ]);
+
+          }
+
+          geometry.uvsNeedUpdate = true;
+
+      }
+
+      var buildCharacter = (function() {
+        return function() {
+
+            var dataTexture = generateDataTexture();
+
+            var mat = new THREE.ShaderMaterial({
+                uniforms: {
+                    color: {type: 'v3', value: new THREE.Vector3(1.0, 0.0, 0.0)},
+                    lightDir: { type: "v3", value: new THREE.Vector3(200, 100, 150) },
+                    texture : {type : "t", value : dataTexture}
+                },
+                vertexShader: document.
+                getElementById('vertShader').text,
+                fragmentShader: document.
+                getElementById('fragShader').text,
+                transparent: true,
+            });
+
+            new THREE.JSONLoader().load('models/teapot.js', function(geometry) { 
+                assignUVs(geometry);
+
+                console.log(geometry);
+                var obj = new THREE.Mesh(geometry, mat);
+                scene.add(obj);
+            }); 
+
+        }
+    })();
+
+    var buildNormalMesh = (function(){
+        return function(){
+            var geometry = new THREE.BoxGeometry(10, 10, 10);
+            console.log(geometry);
+            var texture = generateDataTexture();
+
+            var material = new THREE.ShaderMaterial({
+                uniforms: {
+                    color: {type: 'v3', value: new THREE.Vector3(1.0, 0.0, 0.0)},
+                    lightDir: { type: "v3", value: new THREE.Vector3(200, 100, 150) },
+                    texture : {type : "t", value : texture}
+                },
+                vertexShader: document.
+                getElementById('vertShader').text,
+                fragmentShader: document.
+                getElementById('fragShader').text,
+                transparent: true,
+            });
+
+            var mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+        }
+    })();
+
+    init();
+    animate();
+
+
+
+    function init() {
+
+
+        clock = new THREE.Clock();
+        container = document.body;
+
+        camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 5, 3500);
+        camera.position.z = 200;
+
+        scene = new THREE.Scene();
+
+            // =========================================================================================
+            // LIGHT
+            // =========================================================================================
+
+            light = new THREE.PointLight(0xffffff);
+            light.position.set(10, 0, 0);
+            scene.add(light);
+            var ambient = new THREE.AmbientLight(0x222222);
+            scene.add(ambient);
+
+            // ====================================================
+            // Renderer
+            // ====================================================
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+           // renderer.setClearColor(0xffffff, 1);
+           renderer.setSize(window.innerWidth, window.innerHeight);
+
+           container.appendChild(renderer.domElement);
+
+           controls = new THREE.OrbitControls(camera, renderer.domElement);
+           controls.userPan = false;
+           controls.userPanSpeed = 0.0;
+           controls.maxDistance = 5000.0;
+          //  controls.maxPolarAngle = Math.PI * 0.495;
+
+            // =======================================================================================
+            // Add water texture
+            // =======================================================================================
+
+            scene.add(new THREE.AxisHelper(100));
+
+            // Custom mesh or normal mesh
+            buildCharacter();
+            //buildNormalMesh();
+
+        }
+
+
+
+
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+        };
+
+        function render() {
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        </script>
+    </body>
+    </html>

@@ -22,19 +22,15 @@
     <script id="fragShader" type="shader">
 
         precision highp float;
-        uniform float color;
+        uniform vec3 color;
         float intensity;
         uniform vec3 lightDir;
         varying vec3 normalToVertex;
         vec3 pointLightDir;
 
         void main(void) {
-            for(int l = 0; l < MAX_POINT_LIGHTS; l++) {
-
-            }
-
              intensity = dot(normalToVertex, normalize(lightDir));
-             gl_FragColor = vec4(vec3(intensity), 1.0);
+             gl_FragColor = vec4(color * intensity, 1.0);
         }
     </script>
     <script src="js/three.min.js"></script>
@@ -61,7 +57,7 @@
               
                 var mat = new THREE.ShaderMaterial({
                     uniforms: {
-                            color: {type: 'f', value: 1.0},
+                            color: {type: 'v3', value: new THREE.Vector3(1.0, 0.0, 0.0)},
                             lightDir: { type: "v3", value: new THREE.Vector3(200, 100, 150) }
                     },
                     vertexShader: document.
