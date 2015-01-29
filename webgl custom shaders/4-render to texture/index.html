@@ -293,6 +293,7 @@ function render() {
 
     // read render texture into buffer
      var gl = renderer.getContext();
+
      gl.readPixels(0, 0, simRes, simRes, gl.RGBA, gl.UNSIGNED_BYTE, buf1.image.data);
      buf1.needsUpdate = true;
 

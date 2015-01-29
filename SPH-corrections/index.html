@@ -1,0 +1,167 @@
+<html>
+<head>
+    <title>My first Three.js app</title>
+    <style>
+        canvas
+        {
+            width: 100%;
+            height: 100%;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <script src="js/three.min.js"></script>
+    <script src="js/OrbitControls.js"></script>
+    <script src="js/hashmap.js"></script>
+    <script src="xsph/particle.js"></script>
+    <script src="xsph/neighbor.js"></script>
+    <script src="xsph/newsph.js"></script>t>
+    <script src="js/DAT.GUI.js"></script>
+    <script src="js/stats.min.js"></script>
+    <script>
+        var scene, camera, renderer, particleSystem, container, fluid, time = 0, controls, particle = [];
+
+        var stats = new Stats();
+        stats.setMode(1); // 0: fps, 1: ms
+
+        // align top-left
+        stats.domElement.style.position = 'absolute';
+        stats.domElement.style.left = '0px';
+        stats.domElement.style.top = '0px';
+
+        document.body.appendChild(stats.domElement);
+
+        init();
+        animate();
+
+        function init() {
+            container = document.body;
+
+            camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 5, 3500);
+            camera.position.z = 200;
+
+            scene = new THREE.Scene();
+
+            var ambient = new THREE.AmbientLight(0x222222);
+            scene.add(ambient);
+
+            var light = new THREE.SpotLight(0x999999, 0.8);
+            light.position.set(0, 1, 1);
+            light.target.position.set(0, 0, 0);
+            scene.add(light);
+
+            // ===========================================================================
+            // Fluid properties
+            // ===========================================================================
+            particle.numX = 6, particle.numY = 6, particle.numZ = 6;
+
+            fluid = new WATERFALL.SPH(particle.numX, particle.numY, particle.numZ, {});
+
+            //BABYLON.ShaderRepository = '';
+
+            var particleImage = THREE.ImageUtils.loadTexture("textures/waterfall.png");
+            var particleMaterial = new THREE.PointCloudMaterial({ color: 0xffffff,
+                size: 5,
+                map: particleImage,
+                opacity: 0.9,
+                transparent: false,
+                depthTest: false, 
+                blending: THREE.AdditiveBlending,
+                wireframe: true });
+
+            particleSystem = new THREE.PointCloud(fluid.mGeometry, particleMaterial);
+            scene.add(particleSystem);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setClearColor(0xffffff, 1);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.userPan = false;
+            controls.userPanSpeed = 0.0;
+            controls.maxDistance = 5000.0;
+            controls.maxPolarAngle = Math.PI * 0.495;
+
+            // ===========================================================================
+            // Add helper axes
+            // ===========================================================================
+            scene.add(new THREE.AxisHelper(10));
+
+            // ===========================================================================
+            // GUI Controls
+            // ===========================================================================
+//            var gui = new dat.GUI();
+//
+//            var particleProps = gui.addFolder('Particles');
+//            particleProps.add(particle, 'numX').min(5).max(20).step(1);
+//            particleProps.add(particle, 'numY').min(5).max(20).step(1);
+//            particleProps.add(particle, 'numZ').min(5).max(20).step(1);
+//
+//            var fluidProps = gui.addFolder('Fluid');
+//            fluidProps.add(fluid, 'mDamping').min(0).max(0.1).step(0.001);
+//            fluidProps.add(fluid, 'mHeatRatio').min(0).max(10).step(1);
+//            fluidProps.add(fluid, 'mVAlpha').min(0).max(10).step(1); ;
+//            fluidProps.add(fluid, 'mVBeta').min(0).max(15).step(1); ;
+//            fluidProps.add(fluid, 'mTimestep').min(0).max(10).step(0.01);
+//            fluidProps.add(fluid, 'mUnitScale').min(0).max(10).step(0.01);
+//            fluidProps.add(fluid, 'mWorldScale').min(0).max(10).step(0.01);
+//            fluidProps.add(fluid, 'mRestDensity').min(0).max(1).step(0.001);
+//            fluidProps.add(fluid, 'mParticleSpacing').min(1).max(20).step(0.001);
+//            fluidProps.add(fluid, 'mXlimit').min(-10).max(100).step(0.001);
+//            fluidProps.add(fluid, 'mXlimitNeg').min(-100).max(0).step(0.001);
+//            fluidProps.add(fluid, 'mYlimit').min(0).max(100).step(0.001);
+//            fluidProps.add(fluid, 'mYlimitNeg').min(-100).max(0).step(0.001);
+//            fluidProps.add(fluid, 'mZlimit').min(0).max(100).step(0.001);
+//            fluidProps.add(fluid, 'mZlimitNeg').min(-100).max(0).step(0.001);
+//
+//            for (var i in particleProps.__controllers) {
+//                particleProps.__controllers[i].onFinishChange(function (value) {
+//                    scene.remove(particleSystem);
+//                    fluid = new WATERFALL.SPH(particle.numX, particle.numY, particle.numZ);
+//                    particleSystem = new THREE.PointCloud(fluid.mGeometry, particleMaterial);
+//                    scene.add(particleSystem);
+//                });
+//            }
+//
+//            for (var i in fluidProps.__controllers) {
+//                fluidProps.__controllers[i].onFinishChange(function (value) {
+//                    scene.remove(particleSystem);
+//                    fluid = new WATERFALL.SPH(particle.numX, particle.numY, particle.numZ);
+//                    for (var j in fluidProps.__controllers) {
+//                        if (fluidProps.__controllers[j].property in fluid) {
+//                            fluid[fluidProps.__controllers[j].property] = this.object[fluidProps.__controllers[j].property];
+//                            console.log(fluidProps.__controllers[j].property + " is " + this.object[fluidProps.__controllers[j].property]);
+//                        }
+//                    }
+//                    particleSystem = new THREE.PointCloud(fluid.mGeometry, particleMaterial);
+//                    scene.add(particleSystem);
+//                });
+//            }
+//
+//            gui.open();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+        };
+
+        function render() {
+            //time += 0.1;
+
+            stats.begin();
+
+            fluid.update();
+
+            controls.update();
+
+            renderer.render(scene, camera);
+
+            stats.end();
+        }
+    </script>
+</body>
+</html>

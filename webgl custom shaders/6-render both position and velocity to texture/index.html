@@ -12,12 +12,12 @@
 <br/>
 Click and see what happens ;)
 </div>
-<script src="http://jabtunes.com/labs/3d/gpuflocking/js/three.min.js.pagespeed.jm.YcctDE0WA8.js"></script>
+<script src="js/three.min.js"></script>
 <script>//<![CDATA[
 var Detector={canvas:!!window.CanvasRenderingContext2D,webgl:(function(){try{return!!window.WebGLRenderingContext&&!!document.createElement('canvas').getContext('experimental-webgl');}catch(e){return false;}})(),workers:!!window.Worker,fileapi:window.File&&window.FileReader&&window.FileList&&window.Blob,getWebGLErrorMessage:function(){var element=document.createElement('div');element.id='webgl-error-message';element.style.fontFamily='monospace';element.style.fontSize='13px';element.style.fontWeight='normal';element.style.textAlign='center';element.style.background='#fff';element.style.color='#000';element.style.padding='1.5em';element.style.width='400px';element.style.margin='5em auto 0';if(!this.webgl){element.innerHTML=window.WebGLRenderingContext?['Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br />','Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'].join('\n'):['Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br/>','Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'].join('\n');}
 return element;},addGetWebGLMessage:function(parameters){var parent,id,element;parameters=parameters||{};parent=parameters.parent!==undefined?parameters.parent:document.body;id=parameters.id!==undefined?parameters.id:'oldie';element=Detector.getWebGLErrorMessage();element.id=id;parent.appendChild(element);}};
 //]]></script>
-<script src="http://jabtunes.com/labs/3d/gpuflocking/js/stats.min.js.pagespeed.jm.IGPzmnrWg_.js"></script>
+<script src="js/stats.min.js"></script>
 <!-- pass through shaders -->
 <script id="vertexShader" type="x-shader/x-vertex">
 
@@ -46,6 +46,18 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 
 		</script>
 <!-- end pass through shaders -->
+
+<script id="fragmentShaderDensity" type="x-shader/x-fragment">
+        uniform vec2 resolution;
+        uniform float time;
+        uniform sampler2D textureVelocity;
+        uniform sampler2D texturePosition;
+
+        void main() {
+            gl_FragColor = vec4(1.0,1.0,1.0,1.0);
+        }
+</script>
+
 <script id="fragmentShaderPosition" type="x-shader/x-fragment">
 
 			uniform vec2 resolution;
@@ -64,8 +76,8 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 				gl_FragColor=vec4(position + velocity * 5.0, 1.0);
 
 			}
+</script>
 
-		</script>
 <script id="fragmentShaderVelocity" type="x-shader/x-fragment">
 
 			uniform vec2 resolution;
@@ -89,12 +101,66 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 			    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
 			}
 
+            //SPH constants
+            float smoothingLength = 1.05;    //h or l
+            float smoothingLength_2 = pow(smoothingLength,2.0);
+            float wPoly6 = (315.0 / (64.0 * PI * pow(smoothingLength, 9.0)));
+            float wPolyGradient = (-945.0 / (32.0 * PI * pow(smoothingLength, 9.0)));
+            float wPolyLaplacian = (-945.0 / (32.0 * PI * pow(smoothingLength, 9.0)));
+            float wSpikyGradient = (-45.0 / (PI * pow(smoothingLength, 6.0)));
+            float wViscosityLaplacian = (45.0 / (PI * pow(smoothingLength, 6.0)));
+
+            //fluid properties
+            float restDensity = 40.0;   //rho0
+            float mass = 0.18; //m
+            float viscosityConstant = 1.1;    // mew
+            float gasConstant = 10.0; //k
+            float diffuseConstant = 3000.0;   //c
+            float idealGasConstant = 3000.0;  //alpha
+
+            float surfaceTensionCoefficient = 500.0; //sigma
+            float surfaceTensionThreshold = 0.8;    //beta
+            float restitutionCoefficient = 0.2;
+            float surfaceColorCoefficient = 0.001;   //cs
+            float velocityCorrectionFactor = 0.005;   //eta
+
+
+            float wKernelPoly(float separationLength) {
+                return wPoly6 * pow(smoothingLength_2 - pow(separationLength, 2.0), 3.0);
+            }
+
+            vec3 wKernelPolyGradient(vec3 separationVector) {
+                float separationLength = length(separationVector);
+                float factor = wPolyGradient * pow(pow(smoothingLength,2.0) - pow(separationLength,2.0),2.0);
+                return separationVector * factor;
+            }
+
+            float wKernelPolyLaplacian(float separationLength) {
+                float separationLength_2 = pow(separationLength, 2.0);
+                return wPolyLaplacian * (smoothingLength_2 - separationLength_2) * (3.0*smoothingLength_2 - 7.0*separationLength_2);
+            }
+
+            vec3 wKernelSpikyGradient(vec3 separationVector) {
+                float separationLength = length(separationVector);
+                float factor = wSpikyGradient * pow(smoothingLength - separationLength, 2.0);
+                return normalize(separationVector) * factor;
+            }
+
+            vec3 wKernelViscosityLaplacian(vec3 separationVector) {
+                float separationLength = length(separationVector);
+                float factor = wViscosityLaplacian * (smoothingLength - separationLength);
+                return separationVector * factor;
+            }
+
+
 			void main()	{
 
 				float seperationDistance = 10.0; // 10
 				float alignmentDistance = 40.0; // 40
 				float cohesionDistance = 200.0; // 200
 				float freedomFactor = 0.85;
+                float gravity = 0.01;
+                float dampingFactor = 0.995;
 
 
 				// alignmentDistance = testing;
@@ -124,7 +190,6 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 				float cohensionCount = 0.0;
 				float alignmentCount = 0.0;
 
-
 				if (testing == 0.0) {
 					// vec3 prey = vec3(0.0, 0.0, 0.0);
 					// float dist = distance(prey, selfPosition);
@@ -137,7 +202,8 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 					seperationDistance = 40.0;
 				}
 
-				if ( rand( uv + time ) > freedomFactor ) {
+
+			//	if ( rand( uv + time ) > freedomFactor ) {
 
 					for (int y=0;y<height;y++) {
 						for (int x=0;x<width;x++) {
@@ -145,48 +211,52 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 							if (
 								x == int(gl_FragCoord.x) && y == int(gl_FragCoord.y)) continue;
 
-
 							birdPosition = texture2D( texturePosition,
 								vec2(float(x)/resolution.x, float(y)/resolution.y) ).xyz;
 
 							birdVelocity = texture2D( textureVelocity,
 								vec2(float(x)/resolution.x, float(y)/resolution.y) ).xyz;
 
-							diff = birdPosition - selfPosition;
-							dist = length(diff);
+							 diff = birdPosition - selfPosition;
+							 dist = length(diff);
+                            
+							 // if (dist > 0.0 && dist < seperationDistance) {
+							 // 	velocity -= diff / dist;
+							 // 	velocity /= 2.0;
+							 // }
 
-							if (dist > 0.0 && dist < seperationDistance) {
-								velocity -= diff / dist;
-								velocity /= 2.0;
-							}
+                             
 
-							if (dist < alignmentDistance) {
-								alignment += birdVelocity;
-								alignmentCount ++;
-							}
+							// if (dist < alignmentDistance) {
+							// 	alignment += birdVelocity;
+							// 	alignmentCount ++;
+							// }
 
-							if (dist < cohesionDistance) {
-								cohesion += birdPosition;
-								cohensionCount ++;
-							}
+							// if (dist < cohesionDistance) {
+							// 	cohesion += birdPosition;
+							// 	cohensionCount ++;
+							// }
 
 						}
 					}
 
-					if (alignmentCount > 0.0) {
-						alignment /= alignmentCount;
-						dist = length(alignment);
-						velocity += alignment/dist;
-						velocity /= 2.0;
-					}
+                    velocity.y -= gravity;
+                    velocity *= dampingFactor;
 
-					if (cohensionCount > 0.0) {
-						cohesion /= cohensionCount;
-						diff = cohesion - selfPosition;
-						dist = length(diff);
-						velocity = diff / dist / 10.0 * 0.5 + velocity * 0.5;
-					}
-				}
+					// if (alignmentCount > 0.0) {
+					// 	alignment /= alignmentCount;
+					// 	dist = length(alignment);
+					// 	velocity += alignment/dist;
+					// 	velocity /= 2.0;
+					// }
+
+					// if (cohensionCount > 0.0) {
+					// 	cohesion /= cohensionCount;
+					// 	diff = cohesion - selfPosition;
+					// 	dist = length(diff);
+					// 	velocity = diff / dist / 10.0 * 0.5 + velocity * 0.5;
+					// }
+			//	}
 
 				if ((selfPosition.x + velocity.x * 5.0) < LOWER_BOUNDS) velocity.x = -velocity.x;
 				if ((selfPosition.y + velocity.y * 5.0) < LOWER_BOUNDS) velocity.y = -velocity.y;
@@ -218,13 +288,13 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 			void main() {
 
 				vec2 uv = position.xy + vec2( 0.5 / width, 0.5 / height );
+                vUv = uv;
 				vec3 color = texture2D( map, uv ).rgb;
 				 // * 100.0 - 50.0;
 
 				// gl_PointSize = pointSize;
-				gl_PointSize = 4.0;
+				gl_PointSize = 15.0;
 				gl_Position = projectionMatrix * modelViewMatrix * vec4( color, 1.0 );
-
 			}
 
 		</script>
@@ -232,10 +302,15 @@ return element;},addGetWebGLMessage:function(parameters){var parent,id,element;p
 <script id="fs-particles" type="x-shader/x-fragment">
 
 			uniform vec4 pointColor;
+            uniform sampler2D map;
+            varying vec2 vUv;
+
+            uniform float width;
+            uniform float height;
 
 			void main() {
-
-				gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                vec3 color = texture2D( map, vUv ).rgb;
+				gl_FragColor = vec4(color, 1.0);
 				// pointColor
 
 			}
@@ -250,7 +325,7 @@ var mouseX = 0,
     mouseY = 0;
 var windowHalfX = window.innerWidth / 2;
 var windowHalfY = window.innerHeight / 2;
-var WIDTH = 32;
+var WIDTH = 4;
 var HEIGHT = WIDTH;
 var PARTICLES = WIDTH * WIDTH;
 var BOUNDS = 400,
@@ -261,6 +336,9 @@ console.log('total', PARTICLES);
 var simulator;
 var flipflop = true;
 var rtPosition1, rtPosition2, rtVelocity1, rtVelocity2;
+
+var debugPlane, debugMaterial, debugMesh;
+
 init();
 animate();
 
@@ -279,6 +357,7 @@ function init() {
     }
     renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
+ //   renderer.setClearColor(0xffffff);
     container.appendChild(renderer.domElement);
     simulator = new SimulatorRenderer(WIDTH, renderer);
     var dtPosition = generateDataTexture();
@@ -312,7 +391,7 @@ function init() {
             },
             "pointSize": {
                 type: "f",
-                value: 1
+                value: 5
             }
         },
         vertexShader: document.getElementById('vs-particles').textContent,
@@ -331,6 +410,19 @@ function init() {
         wireframe: true
     }));
     scene.add(cube);
+
+    // debugPlane = new THREE.PlaneGeometry(BOUNDS, BOUNDS);
+    // debugPlaneMaterial = new THREE.MeshBasicMaterial({
+    //   //  color: 0xff0000,
+    //     side: THREE.DoubleSide,
+    //     map: dtPosition
+    // });
+    // debugMesh = new THREE.Mesh(debugPlane, debugPlaneMaterial);
+    // scene.add(debugMesh);
+
+    var axisHelper = new THREE.AxisHelper( BOUNDS_HALF );
+    scene.add( axisHelper );
+
     stats = new Stats();
     stats.domElement.style.position = 'absolute';
     stats.domElement.style.top = '0px';
@@ -384,10 +476,14 @@ function render() {
     if (flipflop) {
         simulator.renderVelocity(rtPosition1, rtVelocity1, rtVelocity2);
         simulator.renderPosition(rtPosition1, rtVelocity2, rtPosition2);
+      //  debugMesh.material.map = rtPosition2;
         material.uniforms.map.value = rtPosition2;
     } else {
         simulator.renderVelocity(rtPosition2, rtVelocity2, rtVelocity1);
         simulator.renderPosition(rtPosition2, rtVelocity1, rtPosition1);
+
+      //  debugMesh.material.map = rtPosition1;
+
         material.uniforms.map.value = rtPosition1;
     }
     flipflop = !flipflop;
@@ -420,12 +516,13 @@ function generateDataTexture() {
         a[k * 4 + 2] = z;
         a[k * 4 + 3] = 1;
     }
+
+
     var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.needsUpdate = true;
     texture.flipY = false;
-    console.log(texture);
     return texture;
 }
 

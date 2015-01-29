@@ -115,5 +115,4 @@ function SimulatorRenderer(WIDTH, renderer) {
 		renderer.render(scene, camera, output);
 		this.output = output;
 	}
-
 }

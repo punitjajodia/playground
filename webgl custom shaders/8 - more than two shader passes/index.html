@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>GPU rendering</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<style>body{background-color:#000;margin:0px;overflow:hidden;font-family:monospace;font-size:13px;text-align:center;font-weight:bold;text-align:center}a{color:#0078ff}#info{color:#fff;position:absolute;top:0px;width:100%;padding:5px;z-index:100}</style>
+</head>
+<body>
+<script src="js/three.min.js"></script>
+<script src="js/stats.min.js"></script>
+<!-- pass through shaders -->
+<script id="vertexShader" type="x-shader/x-vertex">
+
+			void main()	{
+
+				gl_Position = vec4( position, 1.0 );
+
+			}
+
+		</script>
+<script id="fragmentShader" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			uniform sampler2D texture;
+
+			void main()	{
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				vec3 color = texture2D( texture, uv ).xyz;
+
+				gl_FragColor=vec4(color, 1.0);
+
+			}
+
+		</script>
+<!-- end pass through shaders -->
+
+<script id="fragmentShaderDensity" type="x-shader/x-fragment">
+// This shader takes position of all the particles and input and creates a texture containing
+// density and pressure, which is stored in textureDensity texture
+        uniform vec2 resolution;
+        uniform sampler2D texturePosition;
+        uniform sampler2D textureVelocity;
+        uniform sampler2D textureDensity;
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+            vec3 position = texture2D( texturePosition, uv ).xyz;
+            vec3 velocity = texture2D( textureVelocity, uv ).xyz;
+
+            float density = texture2D(textureDensity, uv).x;
+            float pressure = texture2D(textureDensity, uv).y;
+
+            velocity = vec3(1.002);
+
+            gl_FragColor = vec4(velocity, 1.0);
+        }
+</script>
+
+<script id="fragmentShaderPosition" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			// uniform float delta;
+			uniform sampler2D textureVelocity;
+			uniform sampler2D texturePosition;
+
+			void main()	{
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				vec3 position = texture2D( texturePosition, uv ).xyz;
+				vec3 velocity = texture2D( textureVelocity, uv ).xyz;
+
+				gl_FragColor=vec4(position + velocity * 5.0, 1.0);
+
+			}
+</script>
+
+<script id="fragmentShaderVelocity" type="x-shader/x-fragment">
+
+			uniform vec2 resolution;
+			uniform float time;
+			uniform float testing;
+			// uniform float delta;
+			uniform sampler2D textureVelocity;
+			uniform sampler2D texturePosition;
+            uniform sampler2D textureDensity;
+
+
+			const int width = 32;
+			const int height = 32;
+
+			const float UPPER_BOUNDS = 200.0;
+			const float LOWER_BOUNDS = -UPPER_BOUNDS;
+
+            const float gravity = 0.1;
+            const float dampingFactor = 0.99;
+
+			void main()	{
+
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+
+				// int x, y;
+				vec3 birdPosition, birdVelocity;
+
+				vec3 selfPosition = texture2D( texturePosition, uv ).xyz;
+				vec3 selfVelocity = texture2D( textureVelocity, uv ).xyz;
+                float selfDensity = texture2D( textureDensity, uv ).x;
+
+				vec3 velocity = selfVelocity;
+				
+                velocity.y -= gravity;
+
+                velocity *= selfDensity;
+                velocity *= dampingFactor;
+
+				if ((selfPosition.x + velocity.x * 5.0) < LOWER_BOUNDS) velocity.x = -velocity.x;
+				if ((selfPosition.y + velocity.y * 5.0) < LOWER_BOUNDS) velocity.y = -velocity.y;
+				if ((selfPosition.z + velocity.z * 5.0) < LOWER_BOUNDS) velocity.z = -velocity.z;
+
+				if ((selfPosition.x + velocity.x * 5.0) > UPPER_BOUNDS) velocity.x = -velocity.x;
+				if ((selfPosition.y + velocity.y * 5.0) > UPPER_BOUNDS) velocity.y = -velocity.y;
+				if ((selfPosition.z + velocity.z * 5.0) > UPPER_BOUNDS) velocity.z = -velocity.z;
+
+				gl_FragColor=vec4(velocity, 1.0);
+			}
+
+		</script>
+<!-- start shader for particles -->
+<script id="vs-particles" type="x-shader/x-vertex">
+
+			uniform sampler2D map;
+
+			uniform float width;
+			uniform float height;
+
+			uniform float pointSize;
+
+			varying vec2 vUv;
+			varying vec4 vPosition;
+			varying vec4 vColor;
+
+			void main() {
+
+				vec2 uv = position.xy + vec2( 0.5 / width, 0.5 / height );
+				vec3 color = texture2D( map, uv ).rgb;
+				gl_PointSize = 0.5;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( color, 1.0 );
+			}
+
+		</script>
+<!-- color it later... -->
+<script id="fs-particles" type="x-shader/x-fragment">
+
+			uniform vec4 pointColor;
+
+			void main() {
+
+				gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+				// pointColor
+
+			}
+
+		</script>
+<script src="simulator.js"></script>
+<script>
+//if (!Detector.webgl) Detector.addGetWebGLMessage();
+var container, stats;
+var camera, scene, renderer, particles, geometry, materials = [],
+    parameters, i, h, color;
+var mouseX = 0,
+    mouseY = 0;
+var windowHalfX = window.innerWidth / 2;
+var windowHalfY = window.innerHeight / 2;
+var WIDTH = 400;
+var HEIGHT = WIDTH;
+var PARTICLES = WIDTH * WIDTH;
+var BOUNDS = 400,
+    BOUNDS_HALF = BOUNDS / 2;
+var debug;
+var data, texture;
+console.log('total', PARTICLES);
+var simulator;
+var flipflop = true;
+var rtPosition1, rtPosition2, rtVelocity1, rtVelocity2, rtDensity1, rtDensity2;
+init();
+animate();
+
+function init() {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 3000);
+    camera.position.z = 400;
+    scene = new THREE.Scene();
+    geometry = new THREE.Geometry();
+    for (var i = 0, l = WIDTH * HEIGHT; i < l; i++) {
+        var vertex = new THREE.Vector3();
+        vertex.x = (i % WIDTH) / WIDTH;
+        vertex.y = Math.floor(i / WIDTH) / HEIGHT;
+        geometry.vertices.push(vertex);
+    }
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+    simulator = new SimulatorRenderer(WIDTH, renderer);
+    var dtPosition = generateDataTexture();
+    var dtVelocity = generateVelocityTexture();
+    var dtDensity = generateDensityTexture();
+    rtPosition1 = simulator.getRenderTarget();
+    rtPosition2 = rtPosition1.clone();
+    rtVelocity1 = rtPosition1.clone();
+    rtVelocity2 = rtPosition1.clone();
+    rtDensity1 = rtPosition1.clone();
+    rtDensity2 = rtPosition1.clone();
+
+    simulator.renderTexture(dtDensity, rtDensity1);
+    simulator.renderTexture(rtDensity1, rtDensity2);
+
+    simulator.renderTexture(dtPosition, rtPosition1);
+    simulator.renderTexture(rtPosition1, rtPosition2);
+    simulator.renderTexture(dtVelocity, rtVelocity1);
+    simulator.renderTexture(rtVelocity1, rtVelocity2);
+    simulator.velocityUniforms.testing.value = 10;
+    material = new THREE.ShaderMaterial({
+        uniforms: {
+            "map": {
+                type: "t",
+                value: null
+            },
+            "width": {
+                type: "f",
+                value: WIDTH
+            },
+            "height": {
+                type: "f",
+                value: HEIGHT
+            },
+            "pointColor": {
+                type: "v4",
+                value: new THREE.Vector4(0.25, 0.50, 1.0, 0.25)
+            },
+            "pointSize": {
+                type: "f",
+                value: 1
+            }
+        },
+        vertexShader: document.getElementById('vs-particles').textContent,
+        fragmentShader: document.getElementById('fs-particles').textContent,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+        transparent: true
+    });
+    material.uniforms.map.value = rtPosition1;
+    particles = new THREE.ParticleSystem(geometry, material);
+    scene.add(particles);
+    plane = new THREE.PlaneGeometry(BOUNDS, BOUNDS, 1, 1);
+    cube = new THREE.Mesh(new THREE.CubeGeometry(BOUNDS, BOUNDS, BOUNDS), new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true
+    }));
+    scene.add(cube);
+    stats = new Stats();
+    stats.domElement.style.position = 'absolute';
+    stats.domElement.style.top = '0px';
+    container.appendChild(stats.domElement);
+    document.addEventListener('mousemove', onDocumentMouseMove, false);
+    document.addEventListener('mousedown', onMouseDown, false);
+    document.addEventListener('mouseup', onMouseUp, false);
+    document.addEventListener('touchstart', onDocumentTouchStart, false);
+    document.addEventListener('touchmove', onDocumentTouchMove, false);
+    window.addEventListener('resize', onWindowResize, false);
+}
+
+function onWindowResize() {
+    windowHalfX = window.innerWidth / 2;
+    windowHalfY = window.innerHeight / 2;
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onDocumentMouseMove(event) {
+    mouseX = event.clientX - windowHalfX;
+    mouseY = event.clientY - windowHalfY;
+}
+
+function onDocumentTouchStart(event) {
+    if (event.touches.length === 1) {
+        event.preventDefault();
+        mouseX = event.touches[0].pageX - windowHalfX;
+        mouseY = event.touches[0].pageY - windowHalfY;
+    }
+}
+
+function onDocumentTouchMove(event) {
+    if (event.touches.length === 1) {
+        event.preventDefault();
+        mouseX = event.touches[0].pageX - windowHalfX;
+        mouseY = event.touches[0].pageY - windowHalfY;
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    render();
+    stats.update();
+}
+var timer = 0;
+
+function render() {
+    timer += 0.01;
+    if (flipflop) {
+        simulator.renderDensity(rtPosition1, rtVelocity1, rtDensity1, rtDensity2);
+        simulator.renderVelocity(rtPosition1, rtVelocity1, rtDensity2, rtVelocity2);
+        simulator.renderPosition(rtPosition1, rtVelocity2, rtPosition2);
+        material.uniforms.map.value = rtPosition2;
+    } else {
+        simulator.renderDensity(rtPosition2, rtVelocity2, rtDensity2, rtDensity1);
+        simulator.renderVelocity(rtPosition2, rtVelocity2, rtDensity1, rtVelocity1);
+        simulator.renderPosition(rtPosition2, rtVelocity1, rtPosition1);
+        material.uniforms.map.value = rtPosition1;
+    }
+    flipflop = !flipflop;
+    var time = Date.now() * 0.00005;
+    camera.position.x += (mouseX - camera.position.x) * 0.05;
+    camera.position.y += (-mouseY - camera.position.y) * 0.05;
+    camera.lookAt(scene.position);
+    renderer.render(scene, camera);
+}
+
+function onMouseDown() {
+    simulator.velocityUniforms.testing.value = 0;
+}
+
+function onMouseUp() {
+    simulator.velocityUniforms.testing.value = 1;
+}
+
+function generateDataTexture() {
+    var x, y, z;
+    var w = WIDTH,
+        h = WIDTH;
+    var a = new Float32Array(PARTICLES * 4);
+    for (var k = 0; k < PARTICLES; k++) {
+        x = Math.random() * BOUNDS - BOUNDS_HALF;
+        y = Math.random() * BOUNDS - BOUNDS_HALF;
+        z = Math.random() * BOUNDS - BOUNDS_HALF;
+        a[k * 4 + 0] = x;
+        a[k * 4 + 1] = y;
+        a[k * 4 + 2] = z;
+        a[k * 4 + 3] = 1;
+    }
+    var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    texture.flipY = false;
+    console.log(texture);
+    return texture;
+}
+
+function generateDensityTexture() {
+    var x, y, z;
+    var w = WIDTH,
+        h = WIDTH;
+    var a = new Float32Array(PARTICLES * 4);
+    for (var k = 0; k < PARTICLES; k++) {
+        x = Math.random() * BOUNDS - BOUNDS_HALF;
+        y = Math.random() * BOUNDS - BOUNDS_HALF;
+        z = Math.random() * BOUNDS - BOUNDS_HALF;
+        a[k * 4 + 0] = x;
+        a[k * 4 + 1] = y;
+        a[k * 4 + 2] = z;
+        a[k * 4 + 3] = 1;
+    }
+    var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    texture.flipY = false;
+    console.log(texture);
+    return texture;
+}
+
+function generateVelocityTexture() {
+        var x, y, z;
+        var w = WIDTH,
+            h = WIDTH;
+        var a = new Float32Array(PARTICLES * 4);
+        for (var k = 0; k < PARTICLES; k++) {
+            x = Math.random() - 0.5;
+            y = Math.random() - 0.5;
+            z = Math.random() - 0.5;
+            a[k * 4 + 0] = x * 10;
+            a[k * 4 + 1] = y * 10;
+            a[k * 4 + 2] = z * 10;
+            a[k * 4 + 3] = 1;
+        }
+        var texture = new THREE.DataTexture(a, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType);
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.needsUpdate = true;
+        texture.flipY = false;
+        console.log(texture);
+        return texture;
+    } 
+    </script> 
+
+   </body>
+</html>
