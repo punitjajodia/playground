@@ -1,0 +1,122 @@
+<html>
+<head>
+	<title>Physics simulation</title>
+</head>
+<body>
+<div style="width:30%">
+			<div>
+				<canvas id="canvas" height="450" width="600"></canvas>
+			</div>
+		</div>
+
+
+<script src="scripts/chart.js/Chart.min.js"></script>
+<script>
+
+  
+
+    var t = 100; //Number of seconds for which we are running simulation
+    var x = 100; //Total number of particles
+
+  
+
+
+    var dt = 1;
+    var dx = 1;
+    var Nx = Math.ceil(x / dx); // Number of distance steps
+    var Nt = Math.ceil(t / dt); // Number of time steps
+
+      var heatSink = 0;
+    var heatSource = Nx/2;
+
+    var K = 2 * Math.pow(10, -6);
+
+    var T = [];
+
+    init();
+    // console.log(T);
+    for (var i = 0; i < 100000; i++) {
+        interpolate();
+    }
+  
+
+
+    function init() {
+        //Initialize all the points with the base condition
+        for (var t = 0; t <= Nt - 1; t += 1) {
+            T[t] = [];
+            for (var x = 0; x <= Nx - 1; x += 1) {
+                T[t][x] = 15;
+            }
+        }
+
+        // Special conditions
+        for (var t = 0; t <= Nt - 1; t += 1) {
+            T[t][heatSink] = 0; // Left Boundary
+            T[t][heatSource] = 500; // Right Boundary
+        }
+    }
+
+    function interpolate() {
+        var r = K * dt / (dx * dx);
+        var r2 = 1 - 2 * r;
+
+        for (var t = 0; t <= Nt - 2; t = t + 1) {
+            for (var x = 1; x <= Nx - 2; x = x + 1) {
+                T[t + 1][x] = r * T[t][x + 1] +
+                    r2 * T[t][x] +
+                    r * T[t][x - 1];
+            }
+        }
+
+        for (var x = 0; x <= Nx - 1; x = x + 1) {
+            T[0][x] = T[Nt - 1][x];
+        }
+    }
+
+
+</script>
+
+
+<script>
+    var array = [];
+    for (var i = 0; i < Nx; i++) {
+        array.push(i);
+    }
+
+    var randomScalingFactor = function() { return Math.round(Math.random() * 100) };
+    var lineChartData = {
+        labels: array,
+        datasets: [
+//            {
+//                label: "My First dataset",
+//                fillColor: "rgba(220,220,220,0.2)",
+//                strokeColor: "rgba(220,220,220,1)",
+//                pointColor: "rgba(220,220,220,1)",
+//                pointStrokeColor: "#fff",
+//                pointHighlightFill: "#fff",
+//                pointHighlightStroke: "rgba(220,220,220,1)",
+//                data: T[Nt - 1]
+//            },
+				{
+				    label: "My Second dataset",
+				    fillColor: "rgba(151,187,205,0.2)",
+				    strokeColor: "rgba(151,187,205,1)",
+				    pointColor: "rgba(151,187,205,1)",
+				    pointStrokeColor: "#fff",
+				    pointHighlightFill: "#fff",
+				    pointHighlightStroke: "rgba(151,187,205,1)",
+				    data: T[0]
+				}
+			]
+
+    }
+
+    var ctx = document.getElementById("canvas").getContext("2d");
+    window.myLine = new Chart(ctx).Line(lineChartData, {
+        responsive: true
+    });
+</script>
+
+</body>
+</html>
