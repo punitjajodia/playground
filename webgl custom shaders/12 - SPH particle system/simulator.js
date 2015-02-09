@@ -124,7 +124,8 @@ function SimulatorRenderer(WIDTH, renderer) {
 			textureForce: { type: "t", value: null },
 		}),
 		vertexShader: document.getElementById( 'vertexShader' ).textContent,
-		fragmentShader: document.getElementById( 'fragmentShaderPosition' ).textContent
+		fragmentShader: document.getElementById( 'fragmentShaderPosition' ).textContent,
+		transparent: true
 
 
 	} );
@@ -175,7 +176,7 @@ function SimulatorRenderer(WIDTH, renderer) {
 			magFilter: THREE.NearestFilter,
 			format: THREE.RGBAFormat,
 			type: THREE.FloatType,
-			stencilBuffer: false
+			stencilBuffer: true
 		});
 
 		return renderTarget;
@@ -186,7 +187,7 @@ function SimulatorRenderer(WIDTH, renderer) {
 
 	this.renderTexture = function(input, output) {
 		uniforms.texture.value = input;
-		renderer.render(scene, camera, output)
+		renderer.render(scene, camera, output, true);
 		this.output = output;
 	}
 
@@ -195,16 +196,16 @@ function SimulatorRenderer(WIDTH, renderer) {
 		densityShader.uniforms.texturePosition.value = position;
 		densityShader.uniforms.textureVelocity.value = velocity;
 		densityShader.uniforms.textureDensityPressure.value = densityPressure;
-		renderer.render(scene, camera, output);
+		renderer.render(scene, camera, output, true);
 
-		var gl = renderer.getContext();
-		var fb = gl.createFramebuffer();
-		gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, output.__webglTexture, 0);
-		if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-  			var pixels = new Float32Array(WIDTH * WIDTH * 4);
-  			gl.readPixels(output.offset.x, output.offset.y, WIDTH, WIDTH, gl.RGBA, gl.FLOAT, pixels);
-		}
+		// var gl = renderer.getContext();
+		// var fb = gl.createFramebuffer();
+		// gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+		// gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, output.__webglTexture, 0);
+		// if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
+  // 			var pixels = new Float32Array(WIDTH * WIDTH * 4);
+  // 			gl.readPixels(output.offset.x, output.offset.y, WIDTH, WIDTH, gl.RGBA, gl.FLOAT, pixels);
+		// }
 
 
 	// 	var buffer = new Float32Array((WIDTH) * (WIDTH) * 4 );
@@ -220,7 +221,7 @@ function SimulatorRenderer(WIDTH, renderer) {
 		forceShader.uniforms.texturePosition.value = position;
 		forceShader.uniforms.textureVelocity.value = velocity;
 		forceShader.uniforms.textureDensityPressure.value = densityPressure;
-		renderer.render(scene, camera, output);
+		renderer.render(scene, camera, output, true);
 
 		// var buffer = new Float32Array((WIDTH + 1) * (WIDTH + 1) * WIDTH);
 
@@ -237,7 +238,7 @@ function SimulatorRenderer(WIDTH, renderer) {
 		positionShader.uniforms.textureVelocity.value = velocity;
 		positionShader.uniforms.textureDensityPressure.value = densityPressure;
 		positionShader.uniforms.textureForce.value = force;
-		renderer.render(scene, camera, output);
+		renderer.render(scene, camera, output, true);
 		this.output = output;
 	}
 
@@ -250,7 +251,7 @@ function SimulatorRenderer(WIDTH, renderer) {
 		velocityShader.uniforms.lastTextureDensityPressure.value = lastDensityPressure;
 		velocityShader.uniforms.lastTextureForce.value = lastForce;
 		velocityShader.uniforms.time.value = performance && performance.now() || Date.now();
-		renderer.render(scene, camera, output);
+		renderer.render(scene, camera, output, true);
 		this.output = output;
 	}
 }
