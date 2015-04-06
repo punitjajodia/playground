@@ -1,0 +1,835 @@
+<html>
+<head>
+    <title>HARADA SPH</title>
+    <style>
+        body{
+        margin-top:0px;
+        margin-left:0px;
+        margin-right:0px;
+        margin-bottom:0px;
+        }
+        #container{
+        position : absolute;
+        background-color:#000;
+        }
+        #title{
+        background-image:url('title.png');
+        width : 276px;
+        height : 107px;
+        position:absolute;
+        right : 25px;
+        }
+    </style>
+
+
+</head>
+<body>
+<canvas id="canvas3D">
+</canvas>
+
+<script src="js/DAT.GUI.js"></script>
+<script src="js/webgl-utils.js"></script>
+<script src="js/gl-matrix.js"></script>
+<!-- Vertex shader-->
+<script id="shader-vs" type="x-shader/x-vertex">
+
+attribute float aVertexIndex;
+attribute vec3 aVertexPosition;
+attribute vec3 aVertexVelocity;
+
+uniform float uGridVolumeSize;
+uniform float uGridTextureSize;
+uniform mat4 uCameraMatrix;
+uniform mat4 uPMatrix;
+
+uniform highp sampler2D uPositionTexture;
+uniform highp sampler2D uVelocityTexture;
+uniform highp sampler2D uNeighbordhoodTexture;
+uniform highp sampler2D uDensityTexture;
+
+uniform int uStep;
+uniform int uTextureId;
+uniform float uRestDensity;
+uniform bool uUsePointTexture;
+
+varying vec4 vColor;
+varying vec2 vTextureUV;
+varying float vIndex;
+const vec3 center = vec3(0.5);
+const vec3 boxSize = vec3(0.48);
+
+float maxParticles = uGridTextureSize * uGridTextureSize;
+float gridVolumeSizeSquared = uGridVolumeSize * uGridVolumeSize;
+
+vec2 index2D(float indexPosition, bool objectSpace) {
+vec2 index;
+index.x = (mod(indexPosition, uGridTextureSize) + 0.5) / uGridTextureSize;
+index.y = (floor(indexPosition / uGridTextureSize) + 0.5)/ uGridTextureSize;
+if(objectSpace) index = 2.0 * index - vec2(1.0, 1.0);
+return index;
+}
+
+vec4 quadPosition() {
+vec4 vertexPosition;
+
+if(aVertexIndex == 1.0) vertexPosition = vec4(-1.0, -1.0, 0.0, 1.0);
+if(aVertexIndex == 2.0) vertexPosition = vec4(1.0, -1.0, 0.0, 1.0);
+if(aVertexIndex == 3.0) vertexPosition = vec4(-1.0, 1.0, 0.0, 1.0);
+if(aVertexIndex == 4.0) vertexPosition = vec4(1.0, 1.0, 0.0, 1.0);
+
+return vertexPosition;
+}
+
+void main(void) {
+
+gl_PointSize = 1.0;
+
+if(uStep < 0) {
+gl_Position = quadPosition();
+vTextureUV = gl_Position.xy * 0.5 + 0.5;
+}
+if(uStep == 0) {
+gl_Position = vec4(index2D(aVertexIndex, true), 0.0, 1.0);
+vColor = vec4(aVertexPosition, 1.0);
+}
+if(uStep == 1) {
+gl_Position = vec4(index2D(aVertexIndex, true), 0.0, 1.0);
+vColor = vec4(aVertexVelocity, 1.0);
+}
+
+if(uStep == 2) {
+vec3 particlePosition = texture2D(uPositionTexture, index2D(aVertexIndex, false)).rgb;
+vec3 gridParticlePosition = floor(particlePosition * uGridVolumeSize);
+float gridIndex = gridParticlePosition.x + uGridVolumeSize * gridParticlePosition.y + gridVolumeSizeSquared * gridParticlePosition.z;
+gl_Position = vec4(index2D(gridIndex, true), aVertexIndex / maxParticles, 1.0);
+vColor = vec4(aVertexIndex);
+}
+
+if(uStep == 3 || uStep == 4 || uStep == 5) {
+vIndex = aVertexIndex;
+gl_Position = vec4(index2D(aVertexIndex, true), 0.0, 1.0);
+}
+
+if(uStep == 6) {
+vec3 position = texture2D(uPositionTexture, index2D(aVertexIndex, false)).rgb;
+vec3 xLocal = position - center;
+vec3 contactPointLocal = min(boxSize, max(-boxSize, xLocal));
+vec3 contactPoint = contactPointLocal + center;
+float distance = length(contactPoint - position);
+float density = texture2D(uDensityTexture, index2D(aVertexIndex, false)).r;
+
+if(distance > 0.0) position = contactPoint;
+if(density == 0.0) position = vec3(0.0);
+gl_Position = uPMatrix * uCameraMatrix * vec4(position, 1.0);
+
+if(uTextureId == 0) {
+vColor = vec4((0.6 * position.y + 0.4) * vec3(1.0), 0.7 * position.y + 0.15);
+}
+if(uTextureId == 1) {
+vec3 velocity = texture2D(uVelocityTexture, index2D(aVertexIndex, false)).rgb;
+velocity = abs(normalize(velocity));
+vColor = vec4(velocity, 1.0);
+}
+if(uTextureId == 3) vColor = vec4(position, 1.0);
+if(uTextureId == 2) {
+vColor = vec4(0.05, 0.02, 0.6, 1.0);
+vColor.rgb += vec3(1.0 - 0.5 * density / uRestDensity);
+}
+gl_PointSize = uUsePointTexture ? 640.0 / uGridVolumeSize : 2.0;
+if(uTextureId == 0) gl_PointSize *= 0.5;
+}
+}
+
+</script>
+
+<!-- Fragment shader-->
+<script id="shader-fs" type="x-shader/x-fragment">
+#ifdef GL_ES
+precision highp float;
+precision highp sampler2D;
+#endif
+
+uniform int uStep;
+uniform float uMass;
+uniform float uMaxSearchRatio;
+uniform float uWeightDefaultConstant;
+uniform float uWeightPressureConstant;
+uniform float uWeightViscosityConstant;
+uniform float uGridVolumeSize;
+uniform float uGridTextureSize;
+uniform float uK;
+uniform float uRestDensity;
+uniform float uViscosity;
+uniform float uDT;
+uniform vec3 uNeighbords[27];
+uniform float uCr;
+
+uniform sampler2D uPositionTexture;
+uniform sampler2D uVelocityTexture;
+uniform sampler2D uNeighbordhoodTexture;
+uniform sampler2D uParticleTexture;
+uniform sampler2D uDensityTexture;
+
+uniform int uTextureId;
+uniform bool uUsePointTexture;
+uniform int uQuality;
+varying vec4 vColor;
+varying vec2 vTextureUV;
+varying float vIndex;
+
+float maxParticles = uGridTextureSize * uGridTextureSize;
+float gridVolumeSizeSquared = uGridVolumeSize * uGridVolumeSize;
+
+vec3 pressureForce = vec3(0.0);
+vec3 viscosityForce = vec3(0.0);
+
+const vec3 center = vec3(0.5);
+const vec3 boxSize = vec3(0.48);
+
+vec2 index2D(float indexPosition) {
+vec2 index;
+index.x = (mod(indexPosition, uGridTextureSize) + 0.5) / uGridTextureSize;
+index.y = (floor(indexPosition / uGridTextureSize) + 0.5) / uGridTextureSize;
+return index;
+}
+
+float wDefault(vec3 distance) {
+float salida = 0.0;
+float ratio = length(distance);
+if(ratio < uMaxSearchRatio) {
+float ratioSquared = ratio * ratio;
+float maxRatioSquared = uMaxSearchRatio * uMaxSearchRatio;
+float ratioDif = maxRatioSquared - ratioSquared;
+salida = uWeightDefaultConstant * ratioDif * ratioDif * ratioDif;
+}
+return salida;
+}
+
+vec3 wPressure(vec3 distance) {
+vec3 salida = vec3(0.0);
+float ratio = length(distance);
+if(ratio < uMaxSearchRatio && ratio > 0.0) {
+float dif = uMaxSearchRatio - ratio;
+salida = uWeightPressureConstant * normalize(distance) * dif * dif;
+}
+return salida;
+}
+
+float wViscosity(vec3 distance) {
+float salida = 0.0;
+float ratio = length(distance);
+if(ratio < uMaxSearchRatio) salida = uWeightViscosityConstant * (uMaxSearchRatio - ratio);
+return salida;
+}
+
+void forcesSum(float nVertexIndex, vec3 particlePosition, vec3 velocity, float particlePressure) {
+vec2 nIndex2D = index2D(nVertexIndex);
+vec3 nParticlePosition = texture2D(uPositionTexture, nIndex2D).rgb;
+vec3 nVelocity = texture2D(uVelocityTexture, nIndex2D).rgb;
+float nDensity = texture2D(uDensityTexture, nIndex2D).r;
+if(nDensity > 0.0) {
+pressureForce += (uK * (nDensity - uRestDensity) + particlePressure) * uMass * wPressure(nParticlePosition - particlePosition) / uRestDensity;
+viscosityForce += (nVelocity - velocity) * uMass * wViscosity(particlePosition - nParticlePosition) / uRestDensity;
+}
+}
+
+void main(void) {
+
+if(uStep == -2) {
+float distanceX = (vTextureUV.x - 0.5) * (vTextureUV.x - 0.5);
+float distanceY = (vTextureUV.y - 0.5) * (vTextureUV.y - 0.5);
+float distance = 0.5 - sqrt(distanceX + distanceY);
+float alpha = distance > 0.0 ? 1.0 : 0.0;
+distance *= 2.5;
+gl_FragColor = vec4(distance, distance, distance, alpha);
+}
+
+if(uStep == -1) {
+vec4 color;
+if(uTextureId == 0) color = abs(texture2D(uPositionTexture, vec2(vTextureUV.x, vTextureUV.y)));
+if(uTextureId == 1) color = abs(texture2D(uVelocityTexture, vec2(vTextureUV.x, vTextureUV.y)));
+if(uTextureId == 2) color = vec4(texture2D(uNeighbordhoodTexture, vec2(vTextureUV.x, vTextureUV.y)).rgb, 1.0);
+if(uTextureId == 3) color = vec4(texture2D(uDensityTexture, vec2(vTextureUV.x, vTextureUV.y)).rgb, 1.0) * 0.0001;
+gl_FragColor = color;
+}
+
+if(uStep == 0 || uStep ==1 || uStep == 2) gl_FragColor = vColor;
+
+if(uStep == 3) {
+vec3 particlePosition = texture2D(uPositionTexture, index2D(vIndex)).rgb;
+vec3 velocity = texture2D(uVelocityTexture, index2D(vIndex)).rgb;
+vec3 gridParticlePosition = floor(particlePosition * uGridVolumeSize);
+float density = 0.0;
+
+for(int i = 0; i < 27; i++) {
+vec3 nGridPosition = gridParticlePosition + uNeighbords[i];
+float nGridIndex = nGridPosition.x + uGridVolumeSize * nGridPosition.y + gridVolumeSizeSquared * nGridPosition.z;
+if(nGridIndex >= 0.0 && nGridIndex < maxParticles) {
+vec4 vertexIndexes = texture2D(uNeighbordhoodTexture, index2D(nGridIndex));
+if(vertexIndexes.r != 0.0) density += uMass * wDefault(particlePosition - texture2D(uPositionTexture, index2D(vertexIndexes.r)).rgb);
+if(vertexIndexes.g != 0.0 && uQuality > 0) density += uMass * wDefault(particlePosition - texture2D(uPositionTexture, index2D(vertexIndexes.g)).rgb);
+if(vertexIndexes.b != 0.0 && uQuality > 1) density += uMass * wDefault(particlePosition - texture2D(uPositionTexture, index2D(vertexIndexes.b)).rgb);
+if(vertexIndexes.a != 0.0 && uQuality > 2) density += uMass * wDefault(particlePosition - texture2D(uPositionTexture, index2D(vertexIndexes.a)).rgb);
+}
+}
+
+gl_FragColor = vec4(density, 0.0, 0.0, 1.0);
+}
+
+if(uStep == 4) {
+vec2 textureIndex = index2D(vIndex);
+vec3 particlePosition = texture2D(uPositionTexture, textureIndex).rgb;
+vec3 velocity = texture2D(uVelocityTexture, textureIndex).rgb;
+float density = texture2D(uDensityTexture, textureIndex).r;
+vec3 gridParticlePosition = floor(particlePosition * uGridVolumeSize);
+float particlePressure = uK * (density - uRestDensity);
+pressureForce = vec3(0.0);
+viscosityForce = vec3(0.0);
+vec3 internalForces = vec3(0.0);
+
+if(density > 0.0) {
+for(int i = 0; i < 27; i++) {
+vec3 nGridPosition = gridParticlePosition + uNeighbords[i];
+float nGridIndex = nGridPosition.x + uGridVolumeSize * nGridPosition.y + gridVolumeSizeSquared * nGridPosition.z;
+if(nGridIndex >= 0.0 && nGridIndex < maxParticles) {
+vec4 vertexIndexes = texture2D(uNeighbordhoodTexture, index2D(nGridIndex));
+if(vIndex != vertexIndexes.r && vertexIndexes.r != 0.0) forcesSum(vertexIndexes.r, particlePosition, velocity, particlePressure);
+if(vIndex != vertexIndexes.g && vertexIndexes.g != 0.0 && uQuality > 0) forcesSum(vertexIndexes.g, particlePosition, velocity, particlePressure);
+if(vIndex != vertexIndexes.b && vertexIndexes.b != 0.0 && uQuality > 1) forcesSum(vertexIndexes.b, particlePosition, velocity, particlePressure);
+if(vIndex != vertexIndexes.a && vertexIndexes.a != 0.0 && uQuality > 2) forcesSum(vertexIndexes.a, particlePosition, velocity, particlePressure);
+}
+}
+internalForces = (0.5 * pressureForce + uViscosity * viscosityForce);
+internalForces /= density;
+}
+
+vec3 xLocal = particlePosition - center;
+vec3 contactPointLocal = min(boxSize, max(-boxSize, xLocal));
+vec3 contactPoint = contactPointLocal + center;
+float distance = length(contactPoint - particlePosition);
+
+if(distance > 0.0 && length(velocity) > 0.0) {
+vec3 normal = normalize(sign(contactPointLocal - xLocal));
+float restitution = uCr * distance / (uDT * length(velocity));
+velocity -= (1.0 + restitution) * dot(velocity, normal) * normal;
+}
+
+vec3 aceleration = vec3(0.0, -9.82, 0.0) + internalForces;
+velocity += uDT * aceleration;
+
+gl_FragColor = vec4(velocity, 1.0);
+}
+
+if(uStep == 5) {
+vec2 textureIndex = index2D(vIndex);
+vec3 position = texture2D(uPositionTexture, textureIndex).rgb;
+vec3 velocity = texture2D(uVelocityTexture, textureIndex).rgb;
+position += uDT * velocity;
+gl_FragColor = vec4(position, 1.0);
+}
+
+if(uStep == 6) {
+if(uUsePointTexture) {
+gl_FragColor = texture2D(uParticleTexture, gl_PointCoord);
+gl_FragColor *= vColor;
+} else {
+gl_FragColor = vColor;
+}
+}
+}
+
+</script>
+
+
+<script>
+
+/**
+ * Programa que calcula el flujo de part’culas dependiendo de un potencial en
+ * 3D.
+ */
+
+var gl;
+
+var vertexIndexBuffer;
+var vertexPositionBuffer;
+var vertexVelocityBuffer;
+var gridTextureSize = 1024;
+var gridVolumeSize = 100;
+var particleTextureSize = 32;
+var windowSize;
+
+var neighbordhoodData = {};
+var positionData = {};
+var velocityData = {};
+var particleData = {};
+var densityData = {};
+
+var totalParticles = 0;
+var particleMass;
+var maxSearchRatio;
+var weightDefaultConstant;
+var weightPressureConstant;
+var weightViscosityConstant;
+var K_constant;
+var restDensity;
+var viscosity;
+var deltaT;
+
+var alpha = Math.PI / 2.5;
+var beta = 50 * Math.PI / 180;
+var _alpha = alpha;
+var _beta = beta;
+var pMatrix = mat4.create();
+var init = true;
+var binded = false;
+var canvas;
+
+var neighbords = [];
+
+function initGL(canvas) {
+    try {
+        gl = canvas.getContext("experimental-webgl");
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+    } catch (e) {
+    }
+    if (!gl) {
+        alert("Could not initialise WebGL, sorry :-(");
+    }
+}
+
+
+// Funci—n que inicializa webGL...
+function setup() {
+        canvas = document.getElementById("canvas3D");
+        window.onresize = resize;
+        resize(null);
+
+        initGL(canvas);
+        initShaders(false);
+       // initCamera(true);
+
+        gl.getExtension('OES_texture_float');
+
+        neighbordhoodData = setFramebuffer(gridTextureSize, gl.RGBA, gl.NEAREST, gl.NEAREST, gl.FLOAT, true);
+        velocityData = setFramebuffer(gridTextureSize, gl.RGB, gl.NEAREST, gl.NEAREST, gl.FLOAT, false);
+        densityData = setFramebuffer(gridTextureSize, gl.RGB, gl.NEAREST, gl.NEAREST, gl.FLOAT, false);
+        positionData = setFramebuffer(gridTextureSize, gl.RGB, gl.NEAREST, gl.NEAREST, gl.FLOAT, false);
+        particleData = setFramebuffer(particleTextureSize, gl.RGBA, gl.LINEAR, gl.LINEAR_MIPMAP_LINEAR, gl.UNSIGNED_BYTE, false);
+
+        reset();
+        render();
+}
+
+// Funcion de resize
+function resize(e) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+}
+
+// Funci—n que inicia los buffers...
+function initBuffers() {
+
+        gridVolumeSize = vars.gridSize;
+        totalParticles = 0;
+
+        var velocity = [];
+        var position = [];
+        var index = [];
+        var i, j, k;
+
+        var counter = 0;
+        var centerer = 0.5;
+
+        for (k = 1; k < gridVolumeSize - 1; k++) {
+                for (j = 1; j < gridVolumeSize - 1; j++) {
+                        for (i = 1; i < gridVolumeSize / 4; i++) {
+                                position.push((i + centerer) / gridVolumeSize, (j + centerer) / gridVolumeSize, (k + centerer) / gridVolumeSize);
+                                velocity.push(0, 0, 0);
+                                totalParticles++;
+                                index.push(totalParticles);
+                        }
+                }
+        }
+
+        neighbords = [];
+        for (i = -1; i < 2; i++) {
+                for (j = -1; j < 2; j++) {
+                        for (k = -1; k < 2; k++) {
+                                neighbords.push(i, j, k);
+                        }
+                }
+        }
+        vertexPositionBuffer = createBuffer(position, 3);
+        vertexVelocityBuffer = createBuffer(velocity, 3);
+        vertexIndexBuffer = createBuffer(index, 1);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexIndexBuffer);
+        gl.vertexAttribPointer(shader.vertexIndex, vertexIndexBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+        gl.vertexAttribPointer(shader.vertexPosition, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexVelocityBuffer);
+        gl.vertexAttribPointer(shader.vertexVelocity, vertexVelocityBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+}
+
+// Funci—n que resetea las condiciones iniciales de las part’culas...
+function reset() {
+
+        bindTextures([ neighbordhoodData.texture, shader.neighbordhoodTexture,
+                       densityData.texture, shader.densityTexture,
+                       velocityData.texture, shader.velocityTexture,
+                       positionData.texture, shader.positionTexture,
+                       particleData.texture, shader.particleTexture]);
+
+        initBuffers();
+
+        var volume = vars.volume; // m3
+        K_constant = vars.pressureK; // nRT gases ideales
+        maxSearchRatio = vars.maxSearchRatio / gridVolumeSize;
+        weightDefaultConstant = 315 / (64 * Math.PI * Math.pow(maxSearchRatio, 9));
+        weightPressureConstant = -45 / (Math.PI * Math.pow(maxSearchRatio, 6));
+        weightViscosityConstant = 45 / (Math.PI * Math.pow(maxSearchRatio, 6));
+        restDensity = 998.29; // Kg/m3
+        particleMass = restDensity * volume / totalParticles;
+
+        sendDataToGraphicCard();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, particleData.buffer);
+        gl.viewport(0, 0, particleTextureSize, particleTextureSize);
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.uniform1i(shader.step, -2);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        gl.generateMipmap(gl.TEXTURE_2D);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, positionData.buffer);
+        gl.viewport(0, 0, gridTextureSize, gridTextureSize);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.uniform1i(shader.step, 0);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, velocityData.buffer);
+        gl.viewport(0, 0, gridTextureSize, gridTextureSize);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.uniform1i(shader.step, 1);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+}
+
+function render() {
+
+        requestAnimFrame(render);
+
+        gl.uniform1i(shader.usePointTexture, vars.usePointTexture);
+        gl.uniform1i(shader.quality, vars.quality);
+
+        mat4.perspective(24, window.innerWidth / window.innerHeight, 0.001, 1000.0, pMatrix);
+
+        // Movimiento de la c‡mara...
+        if (down || init) {
+                alpha -= 0.1 * (currentMouseY - prevMouseY) * Math.PI / 180;
+                beta += 0.1 * (currentMouseX - prevMouseX) * Math.PI / 180;
+
+                if (alpha <= 0) alpha = 0.001;
+                if (alpha >= Math.PI / 1) alpha = Math.PI / 1;
+        }
+
+        if (_alpha != alpha || _beta != beta || init) {
+                _alpha += (alpha - _alpha) / 7;
+                _beta += (beta - _beta) / 7;
+
+                var cameraRatio = 4;
+                camera.target = [ 0.5, 0.5, 0.5 ];
+                camera.position[0] = cameraRatio * Math.sin(_alpha) * Math.sin(_beta) + camera.target[0];
+                camera.position[1] = cameraRatio * Math.cos(_alpha) + camera.target[1];
+                camera.position[2] = cameraRatio * Math.sin(_alpha) * Math.cos(_beta) + camera.target[2];
+
+                cameraTransformMatrix = defineTransformMatrix(camera.position, camera.target);
+                init = false;
+        }
+
+        prevMouseX = currentMouseX;
+        prevMouseY = currentMouseY;
+        gl.uniformMatrix4fv(shader.cameraMatrix, false, cameraTransformMatrix);
+        gl.uniformMatrix4fv(shader.pMatrix, false, pMatrix);
+
+        // Creaci—n del neighbordhood...
+        gl.bindFramebuffer(gl.FRAMEBUFFER, neighbordhoodData.buffer);
+        gl.viewport(0, 0, gridTextureSize, gridTextureSize);
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.STENCIL_TEST);
+        gl.enable(gl.DEPTH_TEST);
+
+        gl.uniform1i(shader.step, 2);
+
+        gl.colorMask(true, false, false, false);
+        gl.depthFunc(gl.LESS);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+
+        gl.colorMask(false, true, false, false);
+        gl.depthFunc(gl.GREATER);
+        gl.stencilFunc(gl.GREATER, 1, 1);
+        gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
+        gl.clear(gl.STENCIL_BUFFER_BIT);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+
+        if (vars.quality > 1) {
+                gl.colorMask(false, false, true, false);
+                gl.clear(gl.STENCIL_BUFFER_BIT);
+                gl.drawArrays(gl.POINTS, 0, totalParticles);
+        }
+
+        if (vars.quality > 2) {
+                gl.colorMask(false, false, false, true);
+                gl.clear(gl.STENCIL_BUFFER_BIT);
+                gl.drawArrays(gl.POINTS, 0, totalParticles);
+        }
+
+        gl.colorMask(true, true, true, true);
+        gl.disable(gl.STENCIL_TEST);
+        gl.disable(gl.DEPTH_TEST);
+
+        // C‡lculo de la densidad de las part’culas...
+        drawStep(densityData.buffer, 3);
+
+        // Calculo las velocidades de las part’culas...
+        drawStep(velocityData.buffer, 4);
+
+        // Calculo las nuevas posiciones de las part’culas...
+        drawStep(positionData.buffer, 5);
+
+        // Renderizo las part’culas...
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, window.innerWidth, window.innerHeight);
+        var gray = 0.0;
+        gl.clearColor(gray, gray, gray, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LESS);
+        if (vars.blend) {
+                gl.enable(gl.BLEND);
+                gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        }
+        gl.uniform1i(shader.step, 6);
+        gl.uniform1i(shader.textureId, vars.texture);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+        gl.disable(gl.BLEND);
+
+        //paintTexture(null, vars.texture);
+}
+
+// Funci—n que realiza un binding de las texturas...
+function bindTextures(data) {
+        var textures = [gl.TEXTURE0, gl.TEXTURE1, gl.TEXTURE2, gl.TEXTURE3, gl.TEXTURE4];
+        var i;
+        for (i = 0; i < textures.length; i++) {
+                gl.activeTexture(textures[i]);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+
+        for (i = 0; i < data.length; i += 2) {
+                gl.activeTexture(textures[i / 2]);
+                gl.bindTexture(gl.TEXTURE_2D, data[i]);
+                gl.uniform1i(data[i + 1], i / 2);
+        }
+}
+
+// Funci—n que chequea las texturas...
+function paintTexture(buffer, id) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, buffer);
+        gl.uniform1i(shader.step, -1);
+        gl.uniform1i(shader.textureId, id);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+// Funci—n de pintado de las etapas...
+function drawStep(buffer, step) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, buffer);
+        gl.viewport(0, 0, gridTextureSize, gridTextureSize);
+        gl.uniform1i(shader.step, step);
+        gl.drawArrays(gl.POINTS, 0, totalParticles);
+}
+
+
+
+/**
+ * Programa que controla el funcionamiento din‡mico del shader.
+ */
+
+var shader;
+
+function sVars() {
+        this.gridSize = 38;
+        this.volume = 0.8;
+        this.pressureK = 3;
+        this.viscosity = 36;
+        this.maxSearchRatio = 3;
+        this.restitution = 1.0;
+        this.dt = 0.004;
+        this.usePointTexture = true;
+        this.blend = true;
+        this.showTextures = false;
+        this.texture = 3;
+        this.quality = 3;
+        this.restart = function() {
+                reset();
+        };
+}
+
+var vars = new sVars();
+
+// Funci—n que se encarga de parsear los shaders...
+function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+                return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+                if (k.nodeType == 3) {
+                        str += k.textContent;
+                }
+                k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+                shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+                shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+                return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert(gl.getShaderInfoLog(shader));
+                return null;
+        }
+
+        return shader;
+}
+
+// Funci—n que inicializa los shaders...
+function initShaders(interactive) {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+
+        shader = gl.createProgram();
+        gl.attachShader(shader, vertexShader);
+        gl.attachShader(shader, fragmentShader);
+        gl.linkProgram(shader);
+
+        if (!gl.getProgramParameter(shader, gl.LINK_STATUS)) {
+                alert("No se han podido inicializar los shaders");
+        }
+
+        gl.useProgram(shader);
+
+        shader.vertexIndex = gl.getAttribLocation(shader, "aVertexIndex");
+        gl.enableVertexAttribArray(shader.vertexIndex);
+
+        shader.vertexPosition = gl.getAttribLocation(shader, "aVertexPosition");
+        gl.enableVertexAttribArray(shader.vertexPosition);
+
+        shader.vertexVelocity = gl.getAttribLocation(shader, "aVertexVelocity");
+        gl.enableVertexAttribArray(shader.vertexVelocity);
+
+        shader.gridVolumeSize = gl.getUniformLocation(shader, "uGridVolumeSize");
+        shader.gridTextureSize = gl.getUniformLocation(shader, "uGridTextureSize");
+        shader.positionTexture = gl.getUniformLocation(shader, "uPositionTexture");
+        shader.velocityTexture = gl.getUniformLocation(shader, "uVelocityTexture");
+        shader.densityTexture = gl.getUniformLocation(shader, "uDensityTexture");
+        shader.neighbordhoodTexture = gl.getUniformLocation(shader, "uNeighbordhoodTexture");
+        shader.particleTexture = gl.getUniformLocation(shader, "uParticleTexture");
+        shader.step = gl.getUniformLocation(shader, "uStep");
+        shader.mass = gl.getUniformLocation(shader, "uMass");
+        shader.maxSearchRatio = gl.getUniformLocation(shader, "uMaxSearchRatio");
+        shader.weightDefaultConstant = gl.getUniformLocation(shader, "uWeightDefaultConstant");
+        shader.weightPressureConstant = gl.getUniformLocation(shader, "uWeightPressureConstant");
+        shader.weightViscosityConstant = gl.getUniformLocation(shader, "uWeightViscosityConstant");
+        shader.neighbords = gl.getUniformLocation(shader, "uNeighbords");
+        shader.k = gl.getUniformLocation(shader, "uK");
+        shader.restDensity = gl.getUniformLocation(shader, "uRestDensity");
+        shader.viscosity = gl.getUniformLocation(shader, "uViscosity");
+        shader.dt = gl.getUniformLocation(shader, "uDT");
+        shader.textureId= gl.getUniformLocation(shader, "uTextureId");
+        shader.restitution = gl.getUniformLocation(shader, "uCr");
+        shader.usePointTexture = gl.getUniformLocation(shader, "uUsePointTexture");
+        shader.quality = gl.getUniformLocation(shader, "uQuality");
+
+        shader.cameraMatrix = gl.getUniformLocation(shader, "uCameraMatrix");
+        shader.pMatrix = gl.getUniformLocation(shader, "uPMatrix");
+
+        setupShader();
+
+}
+
+// Funci—n que inicializa el shader...
+function setupShader() {
+        // gui = new DAT.GUI(vars);
+
+        // gui.add(vars, "gridSize", 10, 80, 1.0);
+        // gui.add(vars, "volume", 0.1, 2.0, 0.1);
+        // gui.add(vars, "pressureK", 0.0, 10, 0.1);
+        // gui.add(vars, "viscosity", 0.01, 50.0, 0.1);
+        // gui.add(vars, "maxSearchRatio", 1.1, 5.0, 0.01);
+        // gui.add(vars, "restitution", 1.0, 2.0, 0.1);
+        // gui.add(vars, "dt", 0, 0.0045, 0.0001);
+        // gui.add(vars, "quality").name("quality").options({
+        //         'best': 3,
+        //         'high': 2,
+        //         'medium' : 1,
+        //         'low' : 0
+        // });
+        // gui.add(vars, "texture").name("shader").options({
+        //         'position': 3,
+        //         'density' : 2,
+        //         'velocity': 1,
+        //         'transparent': 0
+        // });
+        // gui.add(vars, "usePointTexture");
+        // gui.add(vars, "restart");
+        // gui.toggle();
+        // gui.toggle();
+}
+
+// Funci—n que sube los datos constantes a la tarjeta...
+function sendDataToGraphicCard() {
+        gl.uniform1f(shader.gridVolumeSize, gridVolumeSize);
+        gl.uniform1f(shader.gridTextureSize, gridTextureSize);
+        gl.uniform1f(shader.mass, particleMass);
+        gl.uniform1f(shader.maxSearchRatio, maxSearchRatio);
+        gl.uniform1f(shader.weightDefaultConstant, weightDefaultConstant);
+        gl.uniform1f(shader.weightPressureConstant, weightPressureConstant);
+        gl.uniform1f(shader.weightViscosityConstant, weightViscosityConstant);
+        gl.uniform3fv(shader.neighbords, neighbords);
+        gl.uniform1f(shader.k, K_constant);
+        gl.uniform1f(shader.restDensity, restDensity);
+        gl.uniform1f(shader.viscosity, vars.viscosity);
+        gl.uniform1f(shader.dt, vars.dt);
+        gl.uniform1f(shader.restitution, vars.restitution);
+}
+
+</script>
+
+
+<script>
+    setup();
+</script>
+
+</body>
+</html>

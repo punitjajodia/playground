@@ -1,0 +1,122 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="source">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="header">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="resource">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx</Extensions>
+    </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{7d07db82-1a2f-40d2-87aa-c9804cd7a212}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="cpu_sph.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="glg.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="gpu_util.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="main.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="sph_benchmark.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="sph_common.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="sph_render.c">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="sph_surf.c">
+      <Filter>source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="cpu_sph.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="glg.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="gpu_util.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="sph_benchmark.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="sph_common.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="sph_render.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="sph_surf.h">
+      <Filter>header</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\apply_force.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\collision.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\collision_glass.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\collision_tri_point.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\compute_density.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\compute_pres_visc.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\compute_vel.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\copy_dup_density.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\copy_dup_force.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\passthru.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\sph.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\sum_density.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\sum_force.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\update_position.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\water_fragment.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\water_vertex.cg">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\zero.cg">
+      <Filter>shaders</Filter>
+    </None>
+  </ItemGroup>
+</Project>

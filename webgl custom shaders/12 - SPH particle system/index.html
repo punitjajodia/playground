@@ -36,9 +36,6 @@
     #ifdef GL_ES
         precision highp float;
     #endif
-
-    //uniform vec2 g_resolution;
-    //uniform float g_rmEpsilon;
     varying vec2 vUv;
     float focalLength = 1.0;
     // Camera uniforms
@@ -54,9 +51,16 @@
     const float g_zNear = 0.0; // Near clip depth
     const float g_zFar = 25.0; // Far clip depth
     const int g_rmSteps = 64; // Max raymarch steps
-    const float g_rmEpsilon = 0.001; // Surface threshold
+    const float g_rmEpsilon = 0.1; // Surface threshold
     const vec4 g_skyColor = vec4(0.31, 0.47, 0.67, 1.0);
     const vec4 g_ambient = vec4(0.15, 0.2, 0.32, 1.0);
+    const float UPPER_BOUNDS = 50.0;
+    const float LOWER_BOUNDS = -UPPER_BOUNDS;
+
+    const int width = 75;
+    const int height = 75;
+    uniform sampler2D map;
+    uniform vec2 resolution;
 
     // Maps x from [minX, maxX] to [minY, maxY], without clamping
     float mapTo(float x, float minX, float maxX, float minY, float maxY)
@@ -79,44 +83,45 @@
     }
     float sdSphere(vec3 p, float radius)
     {
-        return length(p) - radius;
+        return abs(length(p) - radius);
     }
     // Subtracts distance field db from da, where db is a signed distance
     float opSubtract(float da, float db)
     {
         return max(da, -db);
     }
+
+
+    float interpolate(float val, float minS, float maxS, float minT, float maxT){
+        return (minT + (val - minS)*(maxT - minT)/(maxS - minS));
+    }
+
+
+    vec3 interpolate(vec3 val, float minS, float maxS, float minT, float maxT){
+        return (minT + (val - minS)*(maxT - minT)/(maxS - minS));
+    }    
+
     // Returns the closest distance to a surface from p in our scene
     float distScene(vec3 p)
     {
-       // Cool sphere fractal
-        // float db = sdSphere(p, 2.0);
-        // p.xyz = mod(p.xyz, 0.5) - vec3(0.25);
-        // float d1 = opSubtract(db, sdBox(p, vec3(0.2)));
-        // return d1;
-        // Repeated spheres
-        // p.xyz = mod(p.xyz, 1.0) - vec3(0.5);
-         return sdSphere(p, 0.1);
-        // float d0 = sdSphere(p - vec3(0, 0.6, 0), 1.5);
-        // float d1 = sdBox(p - vec3(-1.8, 0.25, 0), vec3(0.8));
-        // vec3 q = p;
-        // q.xyz = mod(p.xyz, 1.0) - vec3(0.5);
-        // float extrusionField0 = sdBox(q, vec3(0.28));
-        // vec3 r = p;
-        // r.xyz = mod(p.xyz, 0.5) - vec3(0.25);
-        // float extrusionField1 = sdSphere(r, 0.125);
-        // float df = min(d0, d1);
-        // float df0 = max(df, extrusionField0);
-        // float df1 = min(df0, df + 0.2);
-        // return df1;
-        // return sdSphere(p, 0.25);
-        // float da = sdBox(p - vec3(4.0, 0.5, 0.3), vec3(2.0));
-        // float d1 = opSubtract(db, sdSphere(p, 0.32));
-        // float d1 = opSubtract(ds, sdBox(p, vec3(0.2)));
-        // float d2 = opSubtract(da, sdSphere(p, 0.3));
-        // float d2 = sdBox(p - vec3(0, -0.5, 0), vec3(2.0, 0.5, 2.0));
-        // return min(d1, d2);
+
+        vec3 particlePosition;
+
+        float distance = 2.0;
+           for (int y=0;y<1;y++) {
+            for (int x=0;x<1;x++) {
+                
+
+                //Get position of all neighbouring particles from the position texture one by one
+                particlePosition = texture2D(map, vec2(float(x)/75.0, float(y)/75.0)).xyz;
+
+                // particlePosition = interpolate(particlePosition, LOWER_BOUNDS, UPPER_BOUNDS, float(0), float(1));
+                distance = min(sdSphere(p - particlePosition, 0.25), distance);
+                }
+            }
+        return distance;
     }
+
     // Approximates the (normalized) gradient of the distance function at the given point.
     // If p is near a surface, the function will approximate the surface normal.
     vec3 getNormal(vec3 p)
@@ -233,15 +238,13 @@
         }
         vec4 color;
         float z = mapTo(t, g_zNear, g_zFar, 1.0, 0.0);
-        // Color based on depth
-        //color = vec4(1.0) * z;
+
         // Diffuse lighting
         color = texture * (
             getShading(p, normal, g_light0Position, g_light0Color) +
             getShading(p, normal, vec3(2.0, 3.0, 0.0), vec4(1.0, 0.5, 0.5, 1.0))
             ) / 2.0;
-        // Color based on surface normal
-        //color = vec4(abs(normal), 1.0);
+
         // Blend in ambient occlusion factor
         float ao = ambientOcclusion(p, normal);
         color = color * (1.0 - ao);
@@ -257,38 +260,14 @@
         vec3 up = vec3(0.0, 1.0, 0.0);
         vec3 right = vec3(1.0, 0.0, 0.0);
 
-        //float u = gl_FragCoord.x * 2.0 / g_resolution.x - 1.0;
-        //float v = gl_FragCoord.y * 2.0 / g_resolution.y - 1.0;
-
+ 
         vec3 forward = normalize(cross(right, up));
-        vec3 rd = normalize(forward * focalLength + right * vUv.x * (g_resolution.x / g_resolution.y)+ up * vUv.y);
+        vec3 rd = normalize(forward * focalLength + right * (2.0*vUv.x - 1.0) * (g_resolution.x / g_resolution.y)+ up * (2.0 * vUv.y - 1.0));
         vec3 ro = eye;
 
-        // vec4 color = vec4(1.0); // Sky color
-
-        // float t = 0.0;
-        // const int maxSteps = 32;
-        // for(int i = 0; i < maxSteps; ++i)
-        // {
-        //     vec3 p = ro + rd * t;
-        //     //p.xyz = mod(p.xyz, 1.0) - vec3(0.5);
-        //     float d = length(p) - 0.25; // Distance to sphere of radius 0.5
-        //     if(d < g_rmEpsilon ||t > g_zFar)
-        //     {
-        //         color = vec4(vec3(0.0), 1.0); // Sphere color
-        //         break;
-        //     }
-        //     t += d;
-        // }
-
-        // float z = mapTo(t, g_zNear, g_zFar, 1.0, 0.0);
 
         vec4 color = computeColor(ro, rd);
-
-
-        //vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
         gl_FragColor = vec4(color.xyz, 1.0);
-        //gl_FragColor = color;
     }
 
 
@@ -318,13 +297,9 @@
 	uniform sampler2D texture;
 
 	void main()	{
-
 		vec2 uv = gl_FragCoord.xy / resolution.xy;
-
 		vec3 color = texture2D( texture, uv ).xyz;
-
 		gl_FragColor=vec4(color, 1.0);
-
 	}
 
 </script>
@@ -668,7 +643,7 @@
         float alpha = texture2D( texturePosition, uv ).w;
 
         if(alpha == 0.0)
-            return;
+            discard;
 
      //   finalPosition = coordinates(gl_FragCoord.xyz);
 
@@ -714,17 +689,21 @@
 <!-- color it later... -->
 <script id="fs-particles" type="x-shader/x-fragment">
             varying vec4 pointColor;
-
 			void main() {
-
 				gl_FragColor = vec4(1.0);//vec4(abs(normalize(pointColor.xyz)), 1.0);
 				// pointColor
-
 			}
-
 		</script>
-<script src="simulator.js"></script>
+<script>
+    var WIDTH = 75;
+    var HEIGHT = WIDTH;
+    var PARTICLES = WIDTH * WIDTH;
+    var BOUNDS = 100,
+        BOUNDS_HALF = BOUNDS / 2;
+</script>
 
+<script src="simulator.js"></script>
+<script src="uniforms.js"></script>
 
 <script>
 //if (!Detector.webgl) Detector.addGetWebGLMessage();
@@ -735,11 +714,7 @@ var mouseX = 0,
     mouseY = 0;
 var windowHalfX = window.innerWidth / 2;
 var windowHalfY = window.innerHeight / 2;
-var WIDTH = 75;
-var HEIGHT = WIDTH;
-var PARTICLES = WIDTH * WIDTH;
-var BOUNDS = 100,
-    BOUNDS_HALF = BOUNDS / 2;
+
 var debug;
 var data, texture;
 //console.log('total', PARTICLES);
@@ -795,6 +770,9 @@ function initRayMarchScene() {
     uniforms.g_light0Color = {type: 'v4', value: new THREE.Vector4(0.67, 0.87, 0.93, 1.0)};
     uniforms.color = {type: 'v3', value: new THREE.Vector3(1.0, 0.0, 0.0)};
     uniforms.lightDir = {type: "v3", value: new THREE.Vector3(200, 100, 150)};
+    uniforms.map = {type: "t", value: rtPosition1};
+
+    uniforms = UNIFORMS.merge(UNIFORMS.constants(), uniforms);
 
     var rayMarchMaterial = new THREE.ShaderMaterial({
             uniforms: uniforms,
@@ -806,23 +784,10 @@ function initRayMarchScene() {
              side: THREE.DoubleSide
     });
 
-    var rayMarchGeometry = new THREE.Geometry();
-
-    var scale = BOUNDS_HALF;
-
-    rayMarchGeometry.vertices.push(new THREE.Vector3(-1.0*scale, -1.0*scale, 0.0*scale));
-    rayMarchGeometry.vertices.push(new THREE.Vector3(-1.0*scale, 1.0*scale, 0.0*scale));
-    rayMarchGeometry.vertices.push(new THREE.Vector3(1.0*scale, -1.0*scale, 0.0*scale));
-    rayMarchGeometry.vertices.push(new THREE.Vector3(1.0*scale, 1.0*scale, 0.0*scale));
-    rayMarchGeometry.faces.push( new THREE.Face3( 0, 1, 2 ) );
-    rayMarchGeometry.faces.push( new THREE.Face3( 2 , 1, 3 ) );
-
-    generateUV(rayMarchGeometry);
-
-    rayMarchMesh = new THREE.Mesh(rayMarchGeometry, rayMarchMaterial);
-
-    rayMarchMesh.position.y = BOUNDS;
-    scene.add(rayMarchMesh);
+      // setup plane in scene for rendering
+      rayMarchMesh = new THREE.Mesh(new THREE.PlaneGeometry(BOUNDS, BOUNDS), rayMarchMaterial);
+      rayMarchMesh.position.y = BOUNDS;
+      scene.add(rayMarchMesh);
 }
 
 
@@ -843,7 +808,6 @@ function init() {
         vertex.y = Math.floor(i / WIDTH) / HEIGHT;
         geometry.vertices.push(vertex);
     }
-    console.log(geometry.vertices);
 
     scene.add(new THREE.AxisHelper(100));
 
@@ -946,8 +910,6 @@ function init() {
     scene.add(debugVelocity);
     scene.add(debugPosition);
 
-  
-
     stats = new Stats();
     stats.domElement.style.position = 'absolute';
     stats.domElement.style.top = '0px';
@@ -1037,7 +999,7 @@ function render() {
         simulator.renderVelocity(rtPosition1, rtVelocity1, rtDensityPressure2, rtForce2, rtDensityPressure1, rtForce1, rtVelocity2);
         simulator.renderPosition(rtPosition1, rtVelocity2, rtDensityPressure2, rtForce2, rtPosition2);
         material.uniforms.map.value = rtPosition2;
-        rayMarchMesh.material.uniforms.map = rtPosition2;
+        rayMarchMesh.material.uniforms.map.value = rtPosition2;
 
         debugDensityPressure.material.map = rtDensityPressure2;
         debugForce.material.map = rtForce2;
@@ -1051,14 +1013,13 @@ function render() {
         simulator.renderVelocity(rtPosition2, rtVelocity2, rtDensityPressure1, rtForce1, rtDensityPressure2, rtForce2, rtVelocity1);
         simulator.renderPosition(rtPosition2, rtVelocity1, rtDensityPressure1, rtForce1, rtPosition1);
         material.uniforms.map.value = rtPosition1;
-        rayMarchMesh.material.uniforms.map = rtPosition1;
+        rayMarchMesh.material.uniforms.map.value = rtPosition1;
         debugDensityPressure.material.map = rtDensityPressure1;
         debugForce.material.map = rtForce1;
         debugVelocity.material.map = rtVelocity1;
         debugPosition.material.map = rtPosition1;
     }
 
-    rayMarchMesh.material.uniforms.map = rt
 
     flipflop = !flipflop;
     var time = Date.now() * 0.00005;

@@ -1,0 +1,30 @@
+﻿Build started 1/29/2015 12:10:56 PM.
+     1>Project "C:\wamp\www\playground\rtfluid06\gpu_sph.vcxproj" on node 2 (build target(s)).
+     1>InitializeBuildStatus:
+         Creating "Debug\gpu_sph.unsuccessfulbuild" because "AlwaysCreate" was specified.
+       ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\CL.exe /c /ZI /nologo /W3 /WX- /Od /Oy- /D WIN32 /D _DEBUG /D _CONSOLE /D _MBCS /Gm /EHsc /RTC1 /MTd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Fo"Debug\\" /Fd"Debug\vc100.pdb" /Gd /TC /analyze- /errorReport:prompt cpu_sph.c glg.c gpu_util.c main.c sph_benchmark.c sph_common.c sph_render.c sph_surf.c
+         sph_surf.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         sph_render.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         sph_common.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         sph_benchmark.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         main.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         gpu_util.c
+     1>c:\wamp\www\playground\rtfluid06\gpu_util.h(13): fatal error C1083: Cannot open include file: 'GL/glew.h': No such file or directory
+         glg.c
+     1>c:\wamp\www\playground\rtfluid06\glg.c(93): warning C4996: '_snprintf': This function or variable may be unsafe. Consider using _snprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+                 c:\program files (x86)\microsoft visual studio 10.0\vc\include\stdio.h(363) : see declaration of '_snprintf'
+     1>c:\wamp\www\playground\rtfluid06\glg.c(144): warning C4996: '_snprintf': This function or variable may be unsafe. Consider using _snprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+                 c:\program files (x86)\microsoft visual studio 10.0\vc\include\stdio.h(363) : see declaration of '_snprintf'
+         cpu_sph.c
+         Generating Code...
+     1>Done Building Project "C:\wamp\www\playground\rtfluid06\gpu_sph.vcxproj" (build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:01.64

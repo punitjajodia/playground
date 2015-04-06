@@ -1,0 +1,73 @@
+<html>
+<head>
+	<title>Particle System using paperjs</title>
+	<script src="js/paper.js/dist/paper-full.js"></script>
+</head>
+<body>
+
+<script type="text/paperscript" canvas="canvas-1">
+tool.minDistance = 20;
+tool.maxDistance = 300;
+
+
+var vectorStart;
+var vector;
+
+var particles = new Group();
+function onMouseDown(event) {
+	vectorStart = event.point;
+}
+
+
+
+for(var i=0; i<window.innerWidth; i+=100){
+	for(var j=0; j<window.innerHeight; j+= 100){
+		var circle = new Path.Circle([i,j], 10);
+		circle.strokeColor = "#000000";
+		particles.add(circle);
+	}
+}
+
+function drawVector(start, end){
+	var line = new Path();
+	line.strokeColor = "#000000";
+
+	line.add(start);
+	line.add(end);
+
+	var arrow = new Path();
+
+	var lineDir = end - start;
+
+	arrow.add(end + lineDir.normalize(10).rotate(135));
+	arrow.add(end);
+	arrow.add(end + lineDir.normalize(10).rotate(-135));
+
+	arrow.strokeColor = "#000000";
+
+	var group = new Group([
+		line, arrow
+	]);
+
+	return group;
+}
+
+function onMouseDrag(event){
+	if(vector){
+		vector.remove();
+	}
+	vector = drawVector(vectorStart, event.point);
+}
+
+
+function onMouseUp(event){
+	// vector = drawVector(vectorStart, event.point);
+}
+
+</script>
+
+<canvas id="canvas-1" resize="true"></canvas>
+
+
+</body>
+</html>
